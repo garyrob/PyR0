@@ -1,9 +1,9 @@
 [build-system]
-requires = ["maturin>=1,<2"]
+requires = ["maturin>=1.7,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "l2_r0prover"
+name = "PyR0"
 version = "0.2.0"
 authors = [
     { name = "Weikeng Chen", email = "weikeng.chen@l2iterative.com" }
@@ -11,6 +11,10 @@ authors = [
 description = "A Python wrapper for RISC Zero prover"
 readme = "README.md"
 requires-python = ">=3.7"
+dependencies = [
+    "dask",
+    "distributed",
+]
 classifiers = [
     "Environment :: GPU",
     "Programming Language :: Rust",
@@ -28,3 +32,13 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/l2iterative/r0prover-python/"
+
+[tool.maturin]
+python-source = "src"
+module-name = "pyr0._rust"
+features = ["pyo3/extension-module"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.9.2",
+]

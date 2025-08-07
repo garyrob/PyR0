@@ -1,4 +1,4 @@
-import l2_r0prover
+import pyr0
 import time
 from dask.distributed import Client, LocalCluster
 
@@ -10,7 +10,7 @@ if __name__ == '__main__':
     elf_handle = open("elf", mode="rb")
     elf = elf_handle.read()
     tic = time.perf_counter()
-    future = client.submit(l2_r0prover.load_image_from_elf, elf)
+    future = client.submit(pyr0.load_image_from_elf, elf)
     image = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")
@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
     print("running the VM...")
     tic = time.perf_counter()
-    future = client.submit(l2_r0prover.execute_with_input, image, input)
+    future = client.submit(pyr0.execute_with_input, image, input)
     segments, info = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")
@@ -28,32 +28,32 @@ if __name__ == '__main__':
 
     print("generate the receipt for the 1st segment...")
     tic = time.perf_counter()
-    future = client.submit(l2_r0prover.prove_segment, segments[0])
+    future = client.submit(pyr0.prove_segment, segments[0])
     receipt_1 = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")
 
     print("generate the receipt for the 2nd segment...")
     tic = time.perf_counter()
-    future = client.submit(l2_r0prover.prove_segment, segments[1])
+    future = client.submit(pyr0.prove_segment, segments[1])
     receipt_2 = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")
 
     print("lift both receipts and then join them...")
     tic = time.perf_counter()
-    future_1 = client.submit(l2_r0prover.lift_segment_receipt, receipt_1)
-    future_2 = client.submit(l2_r0prover.lift_segment_receipt, receipt_2)
+    future_1 = client.submit(pyr0.lift_segment_receipt, receipt_1)
+    future_2 = client.submit(pyr0.lift_segment_receipt, receipt_2)
     receipt_1_lifted = future_1.result()
     receipt_2_lifted = future_2.result()
-    future =  client.submit(l2_r0prover.join_succinct_receipts, [receipt_1_lifted, receipt_2_lifted])
+    future =  client.submit(pyr0.join_succinct_receipts, [receipt_1_lifted, receipt_2_lifted])
     receipt_joint = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")
 
     print("Join both receipts...")
     tic = time.perf_counter()
-    future = client.submit(l2_r0prover.join_segment_receipts, [receipt_1, receipt_2])
+    future = client.submit(pyr0.join_segment_receipts, [receipt_1, receipt_2])
     receipt_joint_2 = future.result()
     toc = time.perf_counter()
     print(f"It takes {toc - tic:0.4f} seconds")

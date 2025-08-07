@@ -15,14 +15,15 @@ use risc0_zkvm::{
 };
 
 #[pyfunction]
-fn load_image_from_elf(elf: &PyBytes) -> PyResult<Image> {
+fn load_image_from_elf(elf: &Bound<'_, PyBytes>) -> PyResult<Image> {
     Ok(Image::from_elf(elf.as_bytes())?)
 }
 
 #[pyfunction]
+#[pyo3(signature = (image, input, segment_size_limit=None))]
 fn execute_with_input(
     image: &Image,
-    input: &PyBytes,
+    input: &Bound<'_, PyBytes>,
     segment_size_limit: Option<u32>,
 ) -> PyResult<(Vec<Segment>, SessionInfo)> {
     let mut env_builder = ExecutorEnv::builder();
@@ -98,8 +99,13 @@ fn join_segment_receipts(receipts: Vec<PyRef<SegmentReceipt>>) -> PyResult<Succi
     }
 }
 
+#[pyfunction]
+fn verify_receipt(receipt: &SegmentReceipt) -> PyResult<bool> {
+    receipt.verify()
+}
+
 #[pymodule]
-fn l2_r0prover(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Image>()?;
     m.add_class::<Segment>()?;
     m.add_class::<ExitCode>()?;
@@ -112,5 +118,6 @@ fn l2_r0prover(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(lift_segment_receipt, m)?)?;
     m.add_function(wrap_pyfunction!(join_succinct_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(join_segment_receipts, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
     Ok(())
 }

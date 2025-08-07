@@ -1,4 +1,4 @@
-## Python wrapper for RISC Zero prover
+## PyR0 - Python wrapper for RISC Zero prover
 
 <img src="https://github.com/l2iterative/r0prover-python/raw/main/title.png" align="right" style="margin: 20px;" alt="many military tanks rolling in parallel on the desert" width="300"/>
 
@@ -54,7 +54,7 @@ require a lot of care when handling with the CUDA connections.
 <img src="https://docs.dask.org/en/stable/_images/dask_horizontal.svg" align="right" width="200"/>
 
 ```python
-import l2_r0prover
+import pyr0
 from dask.distributed import Client, LocalCluster
 
 if __name__ == '__main__':
@@ -63,13 +63,13 @@ if __name__ == '__main__':
   
   elf_handle = open("elf", mode="rb")
   elf = elf_handle.read()
-  image = l2_r0prover.load_image_from_elf(elf)
+  image = pyr0.load_image_from_elf(elf)
   input = bytes([33, 0, 0, 0, ...]) # omit the detail input
-  segments, info = l2_r0prover.execute_with_input(image, input)
+  segments, info = pyr0.execute_with_input(image, input)
   
   # distribute the task using `client.submit(func, args)`
-  future_1 = client.submit(l2_r0prover.prove_segment, segments[0])
-  future_2 = client.submit(l2_r0prover.prove_segment, segments[1])
+  future_1 = client.submit(pyr0.prove_segment, segments[0])
+  future_2 = client.submit(pyr0.prove_segment, segments[1])
   
   # obtain the results using `future.result()`
   receipt_1 = future_1.result()

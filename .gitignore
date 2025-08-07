@@ -17,3 +17,21 @@ Cargo.lock
 
 .python-version
 test/__pycache__
+
+# Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Backup files
+*.backup
+
+# Virtual environments
+.venv/
+venv/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

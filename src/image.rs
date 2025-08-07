@@ -6,7 +6,7 @@ use risc0_zkvm_platform::memory::GUEST_MAX_MEM;
 use risc0_zkvm_platform::PAGE_SIZE;
 use serde::{Deserialize, Serialize};
 
-#[pyclass(module = "l2_r0prover")]
+#[pyclass(module = "pyr0")]
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Image {
     memory_image: Option<MemoryImage>,

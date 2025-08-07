@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[pyclass(module = "l2_r0prover")]
+#[pyclass(module = "pyr0")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ExitCode {
     exit_code: Option<risc0_zkvm::ExitCode>,
@@ -65,7 +65,8 @@ impl ExitCode {
     }
 
     pub fn is_fault(&self) -> PyResult<bool> {
-        Ok(matches!(self.exit_code, Some(risc0_zkvm::ExitCode::Fault)))
+        // In RISC Zero 1.2, there's no Fault variant, only SystemSplit
+        Ok(matches!(self.exit_code, Some(risc0_zkvm::ExitCode::SystemSplit)))
     }
 
     #[new]
@@ -83,7 +84,7 @@ impl ExitCode {
     }
 }
 
-#[pyclass(module = "l2_r0prover")]
+#[pyclass(module = "pyr0")]
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SessionInfo {
     journal: Option<Vec<u8>>,
