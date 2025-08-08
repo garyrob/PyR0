@@ -1,17 +1,19 @@
 mod image;
+mod receipt;
 mod segment;
 mod serialization;
 mod session;
 mod succinct;
 
 use crate::image::Image;
+use crate::receipt::Receipt;
 use crate::segment::{Segment, SegmentReceipt};
 use crate::session::{ExitCode, SessionInfo};
 use crate::succinct::SuccinctReceipt;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use risc0_zkvm::{
-    get_prover_server, ExecutorEnv, ExecutorImpl, ProverOpts, SimpleSegmentRef, VerifierContext,
+    get_prover_server, ExecutorEnv, ExecutorImpl, ProverOpts, SimpleSegmentRef,
 };
 
 #[pyfunction]
@@ -49,7 +51,7 @@ fn execute_with_input(
 
 #[pyfunction]
 fn prove_segment(segment: &Segment) -> PyResult<SegmentReceipt> {
-    let verifier_context = VerifierContext::default();
+    let verifier_context = risc0_zkvm::VerifierContext::default();
     let res = segment.prove(&verifier_context)?;
     Ok(res)
 }
@@ -100,8 +102,30 @@ fn join_segment_receipts(receipts: Vec<PyRef<SegmentReceipt>>) -> PyResult<Succi
 }
 
 #[pyfunction]
-fn verify_receipt(receipt: &SegmentReceipt) -> PyResult<bool> {
-    receipt.verify()
+#[pyo3(signature = (receipt))]
+fn verify_receipt(receipt: &SegmentReceipt) -> PyResult<()> {
+    receipt.verify_integrity()
+}
+
+/// Serialize data using RISC Zero's serde format for passing to guest
+#[pyfunction]
+fn serialize_for_guest<'py>(py: Python<'py>, data: Vec<Vec<u8>>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    // The guest reads three separate Vec<u8> values, not a Vec<Vec<u8>>
+    // So we need to serialize each one separately and concatenate
+    let mut all_words = Vec::new();
+    
+    for vec in data {
+        let serialized = risc0_zkvm::serde::to_vec(&vec)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize: {}", e)))?;
+        all_words.extend(serialized);
+    }
+    
+    // Convert Vec<u32> to Vec<u8>
+    let bytes: Vec<u8> = all_words.iter()
+        .flat_map(|&word| word.to_le_bytes())
+        .collect();
+    
+    Ok(pyo3::types::PyBytes::new(py, &bytes))
 }
 
 #[pymodule]
@@ -110,6 +134,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Segment>()?;
     m.add_class::<ExitCode>()?;
     m.add_class::<SessionInfo>()?;
+    m.add_class::<Receipt>()?;
     m.add_class::<SegmentReceipt>()?;
     m.add_class::<SuccinctReceipt>()?;
     m.add_function(wrap_pyfunction!(load_image_from_elf, m)?)?;
@@ -119,5 +144,6 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(join_succinct_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(join_segment_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
+    m.add_function(wrap_pyfunction!(serialize_for_guest, m)?)?;
     Ok(())
 }

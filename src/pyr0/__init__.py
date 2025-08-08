@@ -8,6 +8,7 @@ __all__ = [
     "lift_segment_receipt",
     "join_succinct_receipts",
     "join_segment_receipts",
+    "serialize_for_guest",
     "Image",
     "Segment",
     "ExitCode",

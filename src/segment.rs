@@ -1,7 +1,7 @@
 use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
-use risc0_zkvm::{VerifierContext, ProverOpts, get_prover_server};
+use risc0_zkvm::{ProverOpts, get_prover_server};
 use serde::{Deserialize, Serialize};
 
 #[pyclass(module = "pyr0")]
@@ -17,7 +17,7 @@ impl Segment {
         }
     }
 
-    pub fn prove(&self, verifier_context: &VerifierContext) -> Result<SegmentReceipt> {
+    pub fn prove(&self, verifier_context: &risc0_zkvm::VerifierContext) -> Result<SegmentReceipt> {
         // In RISC Zero 1.2, proving is done through the prover server
         let prover = get_prover_server(&ProverOpts::default())?;
         let receipt = prover.prove_segment(verifier_context, &self.segment.as_ref().unwrap())?;
@@ -93,15 +93,41 @@ impl SegmentReceipt {
         Ok(pyo3::types::PyBytes::new(py, &[]))
     }
     
-    /// Verify this receipt is valid
-    pub fn verify(&self) -> PyResult<bool> {
+    /// Cryptographically verifies the segment seal against its embedded claim.
+    /// Note: This does NOT check success exit code or expected image ID.
+    /// For full verification including exit code and image ID checks, use the top-level Receipt.verify() method.
+    #[pyo3(signature = ())]
+    pub fn verify_integrity(&self) -> PyResult<()> {
         let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
-        // In RISC Zero 1.2, SegmentReceipt verification is done differently
-        // The receipt is considered valid if it was successfully created by prove_segment
-        // For now, return true if we have a valid receipt structure
-        // TODO: Implement proper verification for SegmentReceipt in 1.2
-        Ok(receipt.seal.len() > 0)
+        let verifier_ctx = risc0_zkvm::VerifierContext::default();
+        
+        receipt.verify_integrity_with_context(&verifier_ctx)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Verification failed: {}", e)))
+    }
+    
+    /// Legacy verify method - calls verify_integrity
+    /// Deprecated: Use verify_integrity() instead
+    pub fn verify(&self) -> PyResult<bool> {
+        match self.verify_integrity() {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+    
+    /// Get the exit code from the receipt's claim
+    pub fn get_exit_code(&self) -> PyResult<u32> {
+        let receipt = self.segment_receipt.as_ref()
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
+        
+        // Get exit code based on the ExitCode enum
+        use risc0_binfmt::ExitCode;
+        match &receipt.claim.exit_code {
+            ExitCode::Halted(code) => Ok(*code),
+            ExitCode::Paused(code) => Ok(*code),
+            ExitCode::SystemSplit => Ok(0), // System split doesn't have a code
+            ExitCode::SessionLimit => Ok(0), // Session limit doesn't have a code
+        }
     }
 }

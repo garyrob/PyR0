@@ -47,10 +47,11 @@ Generates a zero-knowledge proof for a segment.
 - **segment**: A segment from execution
 - **Returns**: A receipt containing the proof
 
-### `verify_receipt(receipt: SegmentReceipt) -> bool`
-Verifies a proof receipt.
+### `verify_receipt(receipt: SegmentReceipt) -> None`
+Verifies a proof receipt using default verification context.
 - **receipt**: The receipt to verify
-- **Returns**: True if valid, False otherwise
+- **Raises**: RuntimeError if verification fails
+- **Note**: This only verifies the cryptographic integrity of the seal. For full verification including exit code and image ID checks, use `Receipt.verify(image_id)`
 
 ### `lift_segment_receipt(segment_receipt: SegmentReceipt) -> SuccinctReceipt`
 Converts a segment receipt to a more compact succinct receipt.
@@ -85,10 +86,21 @@ Represents how a program exited.
   - `is_fault() -> bool`: Execution fault
   - `get_halted_code() -> int`: Get halt code if halted
 
-### `SegmentReceipt`
-A zero-knowledge proof receipt.
+### `Receipt`
+A complete zero-knowledge proof receipt with full verification capabilities.
 - **Methods**:
-  - `verify() -> bool`: Verify the proof is valid
+  - `verify(image_id: str) -> None`: Fully verify the receipt including exit code and image ID
+  - `journal_bytes() -> bytes`: Get public outputs (journal)
+  - `program_id() -> bytes`: Get the program/image ID that was executed
+  - `to_bytes() -> bytes`: Serialize for storage/transmission
+  - `from_bytes(data: bytes) -> Receipt`: Deserialize from bytes
+
+### `SegmentReceipt`
+A segment-level proof receipt (lower-level than Receipt).
+- **Methods**:
+  - `verify() -> bool`: Basic verification (deprecated, use verify_integrity)
+  - `verify_integrity() -> None`: Verify cryptographic integrity of the seal
+  - `get_exit_code() -> int`: Get the exit code from the claim
   - `journal_bytes() -> bytes`: Get public outputs
   - `__getstate__()/__setstate__()`: For serialization
 
