@@ -1,142 +1,161 @@
-## PyR0 - Python wrapper for RISC Zero prover
+# PyR0 - Python Interface for RISC Zero zkVM
 
-<img src="https://github.com/l2iterative/r0prover-python/raw/main/title.png" align="right" style="margin: 20px;" alt="many military tanks rolling in parallel on the desert" width="300"/>
+Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-When people talk about accelerating zero-knowledge proofs, there are usually two approaches:
-- hardware acceleration
-- distributed computation
+## Overview
 
-After years of exploration, many in the industry (including Supranational, Ingonyama) would agree that Nvidia GPU and 
-Apple Metal GPU seems to be doing pretty well for hardware acceleration. FPGA and ASIC are still too early to compete, 
-and evidence in chip design suggests that FPGA/ASIC are **unlikely** to beat GPU eventually—any idea that can challenge this assertion 
-is most welcomed. In fact, [Omer Shlomovits](https://www.omershlomovits.com/) from [Ingonyama](https://www.ingonyama.com/) 
-and I have a bounty for breakthrough ideas in hardware acceleration.
+PyR0 provides a Python interface to RISC Zero's zero-knowledge virtual machine, allowing you to:
+- Execute RISC Zero guest programs from Python
+- Generate and verify zero-knowledge proofs
+- Build Merkle trees with Poseidon hash for ZK circuits
+- Serialize data for guest program inputs
 
-This leaves distributed computing. 
+## Installation
 
-The idea is that, if we have a zero-knowledge proof task, we want to distribute it to multiple machines and then aggregate 
-their work together. This would require a zero-knowledge proof system that is **distributed-computation-friendly**.
-- the different machines involving in the process are **laconic** and **taciturn**, i.e., they have **minimalistic** communication between each other.
-- the individual proof work can be merged in an efficient way without severely sacrificing the overall proof generation time
+### Prerequisites
 
-This idea has, however, been systematically studied. 
+- Python 3.8+
+- Rust toolchain
+- [uv](https://docs.astral.sh/uv/) package manager
 
-- [zkBridge](https://dl.acm.org/doi/10.1145/3548606.3560652) (ACM CCS 2022), which leads to our portfolio company 
-[Polyhedra](https://polyhedra.network/), discovers that an algebraic holographic proof protocol, [Goldwasser-Kalai-Rothblum (GKR)](https://people.cs.georgetown.edu/jthaler/GKRNote.pdf), 
-can be made distributed-computation-friendly by having each machine handle part of the multilinear extensions. 
-   * However, committing the input polynomials (through FRI) still has to be done in a federated manner, which is only suitable 
-for circuits with small inputs. 
-- [Pianist](https://www.computer.org/csdl/proceedings-article/sp/2024/313000a035/1RjEaaM09eU) (IEEE S&P 2024) shows that, 
-by using [bivariate KZG commitment](https://eprint.iacr.org/2011/587.pdf), one can make polynomial commitment 
-distributed-computation-friendly, coupled with Plonk (or its variants), which are distributed-computation-friendly, 
-one can create fully distributed-computation-friendly proof systems. 
-   * However, it requires homomorphic polynomial commitments, for which KZG is but not FRI. But KZG is usually slower.
-- all SNARK protocols can be made distributed-computation-friendly through [recursive composition](https://people.eecs.berkeley.edu/~alexch/#show-abstract). 
-This would incur additional overhead and latency in composing proofs together, but it is a very general approach that 
-applies to, technically, any SNARK. 
+### Building from Source
 
-RISC Zero takes the third approach. The problem with the first two approaches is the same—not working well with FRI, which
-still has a prevailing advantage in terms of performance, and the benefit declines if subsequent recursive composition is not avoidable.
-For RISC Zero, it is desirable, for Bonsai, to merge proofs from different transactions to lower the on-chain verification 
-costs, which means that all proofs would eventually go through recursion, which discourages KZG-based approach.
+```bash
+# Clone the repository
+git clone https://github.com/garyrob/PyR0.git
+cd PyR0
 
-The third approach reduces the entire acceleration task into a simple step: **coordinate** enough machines to work together.
-Tools for this purpose have been extensively studied in machine learning, and we here focus on the [Dask](https://www.dask.org/) 
-framework.
+# Build and install with uv
+uv tool run maturin build --release
+uv pip install --force-reinstall target/wheels/PyR0-*.whl
+```
 
-We have experimented with the [Ray](https://github.com/ray-project/ray), but the fact that it uses `fork()` appears to 
-require a lot of care when handling with the CUDA connections. 
+For development with editable installs, see [CLAUDE.md](CLAUDE.md) for important notes about uv's behavior.
 
-### Background in Dask, a distributed computing framework
+## Features
 
-[Dask](https://www.dask.org/) is another distributed computing framework with wide adoption. It can be done in a similar manner.
+### Core RISC Zero Operations
 
-<img src="https://docs.dask.org/en/stable/_images/dask_horizontal.svg" align="right" width="200"/>
+Execute guest programs and generate proofs:
 
 ```python
 import pyr0
-from dask.distributed import Client, LocalCluster
 
-if __name__ == '__main__':
-  cluster = LocalCluster()
-  client = Client(cluster)
-  
-  elf_handle = open("elf", mode="rb")
-  elf = elf_handle.read()
-  image = pyr0.load_image_from_elf(elf)
-  input = bytes([33, 0, 0, 0, ...]) # omit the detail input
-  segments, info = pyr0.execute_with_input(image, input)
-  
-  # distribute the task using `client.submit(func, args)`
-  future_1 = client.submit(pyr0.prove_segment, segments[0])
-  future_2 = client.submit(pyr0.prove_segment, segments[1])
-  
-  # obtain the results using `future.result()`
-  receipt_1 = future_1.result()
-  receipt_2 = future_2.result()
+# Load a RISC Zero guest program
+with open("guest_program.elf", "rb") as f:
+    elf_data = f.read()
+image = pyr0.load_image_from_elf(elf_data)
+
+# Execute with input
+input_data = pyr0.prepare_input(b"your input data")
+segments, info = pyr0.execute_with_input(image, input_data)
+
+# Generate a proof
+receipt = pyr0.prove_segment(segments[0])
+
+# Verify the proof
+pyr0.verify_receipt(receipt)
 ```
 
-### Supported versions
+### Merkle Trees with Poseidon Hash
 
-Currently, the library is compiled with CUDA 12.3. There is a risk that it would not work with other versions of CUDA and
-would require compilation from the source.
+Build sparse Merkle trees compatible with zero-knowledge circuits:
 
-### Development with uv
-
-This project uses [uv](https://docs.astral.sh/uv/) for Python package management and [maturin](https://www.maturin.rs/) for building the Rust extension module.
-
-#### Building and Installing Changes
-
-When you make changes to either Rust code (`src/*.rs`) or Python code (`src/pyr0/*.py`), you need to rebuild and reinstall:
-
-```bash
-# Step 1: Build the wheel with your changes
-uv tool run maturin build --release
-
-# Step 2: Install the built wheel (force reinstall to override cached version)
-uv pip install --force-reinstall target/wheels/PyR0-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
-
-# Alternative: Use uv sync for automatic rebuild (slower, builds from source)
-uv sync --no-editable
-```
-
-**Note**: The wheel filename includes your Python version and platform. Adjust accordingly:
-- `cp312` = CPython 3.12
-- `macosx_11_0_arm64` = macOS ARM64 (Apple Silicon)
-
-#### Important: Editable vs Non-Editable Installs
-
-By default, `uv` installs projects in **editable mode**, which means Python imports directly from the source directory (`src/pyr0/`). This can cause issues with PyO3/Rust extensions because:
-
-1. The compiled `.so` file with new Rust features won't be in the source directory
-2. You'll see errors like `AttributeError: 'pyr0.Image' object has no attribute 'image_id'`
-3. Tests will import outdated code even after rebuilding
-4. New Python modules may not be found (e.g., `ImportError: cannot import name 'serialization'`)
-
-**To fix this issue:**
-
-```bash
-# Option 1: Build and install manually (faster for repeated builds)
-uv tool run maturin build --release
-uv pip install --force-reinstall target/wheels/PyR0-0.2.0-*.whl
-
-# Option 2: Let uv handle everything (slower, rebuilds from scratch)
-uv sync --no-editable
-```
-
-**For development workflows:**
-
-- **Quick iteration (editable)**: Use `uv tool run maturin develop` to build the extension into the source directory
-- **Testing changes**: Build wheel + force reinstall (Option 1 above)
-- **Clean build**: Use `uv sync --no-editable` (Option 2 above)
-- **Release testing**: Create a fresh venv and install the wheel to ensure it works correctly
-
-If you see import errors or missing attributes, check where Python is importing from:
 ```python
-import pyr0
-print(pyr0.__file__)  # Should be in site-packages, not src/
+import merkle_py
+
+# Create a sparse Merkle tree
+tree = merkle_py.MerkleTree()
+
+# Insert keys
+tree.insert("0x0000000000000000000000000000000000000000000000000000000000000001")
+tree.insert("0x0000000000000000000000000000000000000000000000000000000000000002")
+
+# Get the root
+root = tree.root()
+
+# Generate a Merkle proof (16 levels for Noir compatibility)
+siblings, bits = tree.merkle_path_16(key)
+
+# Use Poseidon hash directly
+hash_result = merkle_py.poseidon_hash([input1, input2])
 ```
 
-### License
+### Data Serialization
 
-As mentioned in [pyproject.toml](pyproject.toml), this Python module, listed on PyPI, is under MIT and Apache 2 licenses.
+Prepare data for RISC Zero guest programs:
+
+```python
+from pyr0 import serialization
+
+# Serialize various data types for guest programs
+data = serialization.vec_u8(bytes_data)  # Vec<u8> with length prefix
+data = serialization.u32(value)          # 32-bit unsigned integer
+data = serialization.u64(value)          # 64-bit unsigned integer
+data = serialization.string(text)        # String with length prefix
+
+# Prepare Ed25519 signature verification input
+input_data = serialization.ed25519_input_vecs(public_key, signature, message)
+```
+
+## Examples
+
+### Ed25519 Signature Verification
+
+See [demo/real_ed25519_test.py](demo/real_ed25519_test.py) for a complete example of:
+- Building a RISC Zero guest program that verifies Ed25519 signatures
+- Generating zero-knowledge proofs of signature validity
+- Verifying program identity via ImageID
+
+### Merkle Tree Operations
+
+See [demo/merkle_demo.py](demo/merkle_demo.py) for examples of:
+- Building sparse Merkle trees
+- Generating Merkle proofs for zero-knowledge circuits
+- Using Poseidon hash over BN254 field
+
+## Project Structure
+
+```
+PyR0/
+├── src/               # Rust source code
+│   ├── lib.rs        # Main PyO3 bindings
+│   ├── image.rs      # RISC Zero image handling
+│   ├── segment.rs    # Proof generation
+│   └── receipt.rs    # Proof verification
+├── merkle/           # Merkle tree module
+│   └── src/          # Merkle tree implementation
+├── demo/             # Example scripts
+└── CLAUDE.md         # Development notes
+```
+
+## Development
+
+This project uses [maturin](https://www.maturin.rs/) for building Python extensions from Rust. Key commands:
+
+```bash
+# Build for development
+uv tool run maturin develop
+
+# Build release wheel
+uv tool run maturin build --release
+
+# Run tests/demos
+uv run demo/real_ed25519_test.py
+uv run demo/merkle_demo.py
+```
+
+## Acknowledgments
+
+This project is based on the original [PyR0](https://github.com/l2iterative/pyr0prover-python) by L2 Iterative, which focused on distributed proof generation using Dask/Ray. The current fork extends PyR0 with additional features for zero-knowledge proof development, including Merkle tree support and improved guest program interfaces.
+
+## License
+
+This project is dual-licensed under either:
+
+- MIT license ([LICENSE](LICENSE))
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+
+You may choose either license for your use case.
+
+See [NOTICE](NOTICE) for attribution and details about the original project.

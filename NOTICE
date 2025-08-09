@@ -1,0 +1,26 @@
+PyR0 - Python Interface for RISC Zero zkVM
+Copyright 2024 Gary Robinson
+
+This project is based on PyR0 (https://github.com/l2iterative/pyr0prover-python)
+Copyright 2024 L2 Iterative
+
+## Original Project
+
+The original PyR0 project by L2 Iterative focused on distributed proof generation
+for RISC Zero using Dask and Ray frameworks. It was released under dual MIT and
+Apache 2.0 licenses.
+
+## This Fork
+
+This fork extends PyR0 with additional features including:
+- Sparse Merkle tree implementation with Poseidon hash
+- Enhanced serialization helpers for guest programs  
+- Improved Python interface for RISC Zero operations
+
+## Licensing
+
+This project maintains compatibility with the original dual-license structure:
+- Original PyR0 code remains under MIT OR Apache 2.0 license
+- New contributions in this fork are also offered under MIT OR Apache 2.0 license
+
+Users may choose to comply with either the MIT or Apache 2.0 license terms.
