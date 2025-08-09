@@ -18,7 +18,12 @@ use risc0_zkvm::{
 
 #[pyfunction]
 fn load_image_from_elf(elf: &Bound<'_, PyBytes>) -> PyResult<Image> {
-    Ok(Image::from_elf(elf.as_bytes())?)
+    let elf_bytes = elf.as_bytes();
+    // Compute the image ID from the ELF
+    let image_id = risc0_binfmt::compute_image_id(elf_bytes)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to compute image ID: {}", e)))?;
+    
+    Ok(Image::from_elf(elf_bytes, image_id)?)
 }
 
 #[pyfunction]

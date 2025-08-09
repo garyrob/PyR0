@@ -55,3 +55,34 @@ To install in development mode (editable install):
 ```bash
 uv tool run maturin develop
 ```
+
+## Important: Editable vs Non-Editable Installs with uv
+
+**Problem**: By default, `uv` installs projects in editable mode, which causes Python to import from the source directory (`src/pyr0/`) instead of the compiled extension module. This leads to:
+- Missing attributes like `image_id` on PyO3 classes
+- Tests using outdated code even after rebuilding
+- Errors like `AttributeError: 'pyr0.Image' object has no attribute 'image_id'`
+
+**Solution**: Use non-editable install for testing compiled features:
+```bash
+# Build and install as a regular (non-editable) package
+uv sync --no-editable
+
+# This builds the Rust extension and installs to site-packages
+# Now imports will use the compiled version with all features
+```
+
+**Debugging Import Issues**:
+```python
+import pyr0
+print(pyr0.__file__)  
+# Good: /path/to/.venv/lib/python3.12/site-packages/pyr0/__init__.py
+# Bad:  /path/to/project/src/pyr0/__init__.py (editable install)
+```
+
+**Workflow Options**:
+- **Development (fast iteration)**: `uv tool run maturin develop` - builds into source dir for editable mode
+- **Testing features**: `uv sync --no-editable` - builds and installs to site-packages
+- **Testing wheels**: `uv pip install target/wheels/PyR0-*.whl --force-reinstall`
+
+**Note**: The `test/real_ed25519_test.py` script will detect and warn about this issue automatically.

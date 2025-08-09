@@ -1,7 +1,9 @@
 use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use risc0_zkvm::{ProverOpts, get_prover_server};
+use risc0_zkvm::sha::Digestible;
 use serde::{Deserialize, Serialize};
 
 #[pyclass(module = "pyr0")]
@@ -129,5 +131,15 @@ impl SegmentReceipt {
             ExitCode::SystemSplit => Ok(0), // System split doesn't have a code
             ExitCode::SessionLimit => Ok(0), // Session limit doesn't have a code
         }
+    }
+    
+    /// Get the program ID (image ID) from the receipt
+    pub fn program_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let receipt = self.segment_receipt.as_ref()
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
+        
+        // The program ID is the digest of the pre-execution SystemState
+        let digest = receipt.claim.pre.digest();
+        Ok(PyBytes::new(py, digest.as_bytes()))
     }
 }

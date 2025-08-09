@@ -81,6 +81,40 @@ if __name__ == '__main__':
 Currently, the library is compiled with CUDA 12.3. There is a risk that it would not work with other versions of CUDA and
 would require compilation from the source.
 
+### Development with uv
+
+This project uses [uv](https://docs.astral.sh/uv/) for Python package management and [maturin](https://www.maturin.rs/) for building the Rust extension module.
+
+#### Important: Editable vs Non-Editable Installs
+
+By default, `uv` installs projects in **editable mode**, which means Python imports directly from the source directory (`src/pyr0/`). This can cause issues with PyO3/Rust extensions because:
+
+1. The compiled `.so` file with new Rust features won't be in the source directory
+2. You'll see errors like `AttributeError: 'pyr0.Image' object has no attribute 'image_id'`
+3. Tests will import outdated code even after rebuilding
+
+**To fix this issue:**
+
+```bash
+# Build and install as a regular (non-editable) package
+uv sync --no-editable
+
+# This builds the Rust extension and installs it to site-packages
+# Now imports will use the compiled version with all features
+```
+
+**For development workflows:**
+
+- **Quick iteration (editable)**: Use `uv tool run maturin develop` to build the extension into the source directory
+- **Testing built wheels**: Use `uv sync --no-editable` or install wheels directly with `uv pip install`
+- **Release testing**: Create a fresh venv and install the wheel to ensure it works correctly
+
+If you see import errors or missing attributes, check where Python is importing from:
+```python
+import pyr0
+print(pyr0.__file__)  # Should be in site-packages, not src/
+```
+
 ### License
 
 As mentioned in [pyproject.toml](pyproject.toml), this Python module, listed on PyPI, is under MIT and Apache 2 licenses.

@@ -12,6 +12,22 @@ os.environ['RISC0_DEV_MODE'] = '0'
 # Fresh import
 import pyr0
 
+# Debug: check what we actually imported
+print(f"Imported pyr0 from: {pyr0.__file__}")
+print(f"Image has image_id? {hasattr(pyr0.Image, 'image_id')}")
+if not hasattr(pyr0.Image, 'image_id'):
+    print("\n❌ ERROR: Using outdated pyr0 version without image_id support")
+    print(f"   Currently importing from: {pyr0.__file__}")
+    if "/src/pyr0/" in pyr0.__file__:
+        print("\n   PROBLEM: You're importing from the source directory (editable install)")
+        print("   This happens because uv installs projects in editable mode by default.")
+        print("\n   TO FIX: Run 'uv sync --no-editable' to build and install the compiled package")
+        print("   This will build the Rust extension with the latest features.\n")
+    else:
+        print("\n   The installed package appears to be outdated.")
+        print("   TO FIX: Rebuild with 'uv sync --no-editable'\n")
+    sys.exit(1)
+
 # Constants
 GUEST_DIR = Path(__file__).parent / "real_ed25519_test_guest"
 ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "ed25519-guest-input"
@@ -58,6 +74,11 @@ with open(ELF_PATH, "rb") as f:
 image = pyr0.load_image_from_elf(elf_data)
 print("✓ ELF loaded into image")
 
+# Get and display the program's unique ID
+PROGRAM_ID = image.image_id.hex()
+print(f"✓ Program ID: {PROGRAM_ID[:16]}...{PROGRAM_ID[-16:]}")
+print(f"  (Full ID: {PROGRAM_ID})")
+
 # Test with valid signature
 print("\n=== Test 1: Valid Signature ===")
 pk_bytes = bytes.fromhex(PUBLIC_KEY)
@@ -80,32 +101,46 @@ journal = info.get_journal()
 print(f"Journal: {len(journal)} bytes")
 print(f"First 10 bytes: {journal[:10]}")
 
-if len(journal) >= 4 and journal[0] == 99:
-    print("✓ Guest started (marker 99)")
-    # The guest is committing u8 values, but journal stores them as u32 words
-    # Each commit becomes 4 bytes in the journal
-    if len(journal) >= 16:
-        # Read as u32 values (little-endian)
-        import struct
-        marker = struct.unpack('<I', journal[0:4])[0]  # Should be 99
-        pk_size = struct.unpack('<I', journal[4:8])[0]  # Should be 32
-        sig_size = struct.unpack('<I', journal[8:12])[0]  # Should be 64
-        msg_size = struct.unpack('<I', journal[12:16])[0]  # Should be 0
-        print(f"Vector sizes: pk={pk_size}, sig={sig_size}, msg={msg_size}")
+if len(journal) < 4:
+    print("❌ CRITICAL ERROR: Journal too short (< 4 bytes) - guest program likely crashed!")
+    sys.exit(1)
 
-        if len(journal) >= 20:
-            # The result byte is at position 16
-            result = struct.unpack('<I', journal[16:20])[0]
-            if result == 1:
-                print("✅ Signature VALID - Test PASSED")
-            elif result == 0:
-                print("❌ Signature reported as INVALID - Test FAILED")
-            elif result == 200:
-                print("❌ Size mismatch error")
-            elif result == 201:
-                print("❌ Invalid public key error")
-            else:
-                print(f"Unexpected result: {result}")
+if journal[0] != 99:
+    print(f"❌ ERROR: Expected marker 99, got {journal[0]} - guest program malfunction!")
+    sys.exit(1)
+
+print("✓ Guest started (marker 99)")
+
+# The guest is committing u8 values, but journal stores them as u32 words
+# Each commit becomes 4 bytes in the journal
+if len(journal) < 16:
+    print(f"❌ ERROR: Journal too short ({len(journal)} bytes, need 16) - guest crashed after start!")
+    sys.exit(1)
+
+# Read as u32 values (little-endian)
+import struct
+marker = struct.unpack('<I', journal[0:4])[0]  # Should be 99
+pk_size = struct.unpack('<I', journal[4:8])[0]  # Should be 32
+sig_size = struct.unpack('<I', journal[8:12])[0]  # Should be 64
+msg_size = struct.unpack('<I', journal[12:16])[0]  # Should be 0
+print(f"Vector sizes: pk={pk_size}, sig={sig_size}, msg={msg_size}")
+
+if len(journal) < 20:
+    print(f"❌ ERROR: Journal too short ({len(journal)} bytes, need 20) - guest didn't commit result!")
+    sys.exit(1)
+
+# The result byte is at position 16
+result = struct.unpack('<I', journal[16:20])[0]
+if result == 1:
+    print("✅ Signature VALID - Test PASSED")
+elif result == 0:
+    print("❌ Signature reported as INVALID - Test FAILED")
+elif result == 200:
+    print("❌ Size mismatch error")
+elif result == 201:
+    print("❌ Invalid public key error")
+else:
+    print(f"Unexpected result: {result}")
 
 # Generate proof
 print("\nGenerating proof...")
@@ -114,7 +149,16 @@ receipt = pyr0.prove_segment(segments[0])
 proof_time = time.time() - start
 print(f"Proof generated in {proof_time:.2f}s")
 
-# Verify
+# Verify the receipt's program ID matches our expected program
+receipt_program_id = receipt.program_id().hex()
+if receipt_program_id != PROGRAM_ID:
+    print(f"❌ ERROR: Program ID mismatch!")
+    print(f"  Expected: {PROGRAM_ID}")
+    print(f"  Got:      {receipt_program_id}")
+    sys.exit(1)
+print(f"✓ Program ID verified: {receipt_program_id[:16]}...{receipt_program_id[-16:]}")
+
+# Verify the cryptographic proof
 pyr0.verify_receipt(receipt)
 print("✓ Proof verified")
 
@@ -132,13 +176,23 @@ segments, info = pyr0.execute_with_input(image, input_data)
 journal = info.get_journal()
 
 print(f"Journal: {len(journal)} bytes")
-if len(journal) >= 20 and journal[0] == 99:
-    import struct
-    result = struct.unpack('<I', journal[16:20])[0]
-    if result == 0:
-        print("✅ Signature INVALID - Test PASSED")
-    elif result == 1:
-        print("❌ Signature reported as VALID - Test FAILED")
+
+if len(journal) < 20:
+    print(f"❌ ERROR: Journal too short ({len(journal)} bytes, need 20) - guest crashed!")
+    sys.exit(1)
+
+if journal[0] != 99:
+    print(f"❌ ERROR: Expected marker 99, got {journal[0]} - guest malfunction!")
+    sys.exit(1)
+
+import struct
+result = struct.unpack('<I', journal[16:20])[0]
+if result == 0:
+    print("✅ Signature INVALID - Test PASSED")
+elif result == 1:
+    print("❌ Signature reported as VALID - Test FAILED")
+else:
+    print(f"❌ Unexpected result: {result}")
 
 print("\n=== Summary ===")
 print("If both tests passed, the zkVM correctly validates Ed25519 signatures!")
