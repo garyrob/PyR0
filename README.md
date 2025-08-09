@@ -1,6 +1,10 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
+**⚠️ Alpha Release - Apple Silicon Only**
+
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
+
+> **Note**: This is an alpha release currently targeting Apple Silicon (M1/M2/M3) Macs only. Support for Intel Macs, Linux, and Windows is planned for future releases.
 
 ## Overview
 
@@ -12,14 +16,16 @@ PyR0 provides a Python interface to RISC Zero's zero-knowledge virtual machine, 
 
 ## Installation
 
-### Prerequisites
+### System Requirements
 
+**This alpha release requires:**
+- Apple Silicon Mac (M1, M2, or M3)
+- macOS 11.0 or later
 - Python 3.8+
 - Rust toolchain
 - [uv](https://docs.astral.sh/uv/) package manager
-- **Currently requires Apple Silicon Mac (M1/M2/M3)** - Intel Mac and Linux support coming soon
 
-### Building from Source (Apple Silicon)
+### Building from Source
 
 ```bash
 # Clone the repository
@@ -30,24 +36,6 @@ cd PyR0
 uv tool run maturin build --release
 uv pip install --force-reinstall target/wheels/PyR0-*-macosx_11_0_arm64.whl
 ```
-
-### Building from Source (Other Platforms)
-
-For Intel Macs, Linux, or Windows, you'll need to build from source:
-
-```bash
-# Clone the repository
-git clone https://github.com/garyrob/PyR0.git
-cd PyR0
-
-# Build for your platform
-uv tool run maturin build --release
-
-# Install the wheel (filename will vary by platform)
-uv pip install --force-reinstall target/wheels/PyR0-*.whl
-```
-
-Note: The RISC Zero library itself has platform-specific requirements and may require additional setup on non-Mac platforms.
 
 For development with editable installs, see [CLAUDE.md](CLAUDE.md) for important notes about uv's behavior.
 
