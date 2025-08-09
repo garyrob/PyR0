@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Final test with proper RISC Zero serialization"""
+"""Demo of Ed25519 signature verification using RISC Zero zkVM"""
 
 import os
 import sys
@@ -11,6 +11,7 @@ os.environ['RISC0_DEV_MODE'] = '0'
 
 # Fresh import
 import pyr0
+from pyr0 import serialization
 
 # Debug: check what we actually imported
 print(f"Imported pyr0 from: {pyr0.__file__}")
@@ -85,12 +86,11 @@ pk_bytes = bytes.fromhex(PUBLIC_KEY)
 sig_bytes = bytes.fromhex(VALID_SIG)
 msg_bytes = MESSAGE.encode('utf-8')
 
-# Use RISC Zero's proper serialization
-input_data = pyr0.serialize_for_guest([
-    list(pk_bytes),
-    list(sig_bytes),
-    list(msg_bytes)
-])
+# Use the new serialization approach - Python handles the format
+# This creates three Vec<u8> values as expected by the guest
+input_data = pyr0.prepare_input(
+    serialization.ed25519_input_vecs(pk_bytes, sig_bytes, msg_bytes)
+)
 
 print(f"Input size: {len(input_data)} bytes")
 print("Executing...")
@@ -166,11 +166,9 @@ print("✓ Proof verified")
 print("\n=== Test 2: Invalid Signature ===")
 sig_bytes = bytes.fromhex(INVALID_SIG)
 
-input_data = pyr0.serialize_for_guest([
-    list(pk_bytes),
-    list(sig_bytes),
-    list(msg_bytes)
-])
+input_data = pyr0.prepare_input(
+    serialization.ed25519_input_vecs(pk_bytes, sig_bytes, msg_bytes)
+)
 
 segments, info = pyr0.execute_with_input(image, input_data)
 journal = info.get_journal()

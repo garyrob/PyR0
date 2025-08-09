@@ -85,6 +85,25 @@ would require compilation from the source.
 
 This project uses [uv](https://docs.astral.sh/uv/) for Python package management and [maturin](https://www.maturin.rs/) for building the Rust extension module.
 
+#### Building and Installing Changes
+
+When you make changes to either Rust code (`src/*.rs`) or Python code (`src/pyr0/*.py`), you need to rebuild and reinstall:
+
+```bash
+# Step 1: Build the wheel with your changes
+uv tool run maturin build --release
+
+# Step 2: Install the built wheel (force reinstall to override cached version)
+uv pip install --force-reinstall target/wheels/PyR0-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
+
+# Alternative: Use uv sync for automatic rebuild (slower, builds from source)
+uv sync --no-editable
+```
+
+**Note**: The wheel filename includes your Python version and platform. Adjust accordingly:
+- `cp312` = CPython 3.12
+- `macosx_11_0_arm64` = macOS ARM64 (Apple Silicon)
+
 #### Important: Editable vs Non-Editable Installs
 
 By default, `uv` installs projects in **editable mode**, which means Python imports directly from the source directory (`src/pyr0/`). This can cause issues with PyO3/Rust extensions because:
@@ -92,21 +111,24 @@ By default, `uv` installs projects in **editable mode**, which means Python impo
 1. The compiled `.so` file with new Rust features won't be in the source directory
 2. You'll see errors like `AttributeError: 'pyr0.Image' object has no attribute 'image_id'`
 3. Tests will import outdated code even after rebuilding
+4. New Python modules may not be found (e.g., `ImportError: cannot import name 'serialization'`)
 
 **To fix this issue:**
 
 ```bash
-# Build and install as a regular (non-editable) package
-uv sync --no-editable
+# Option 1: Build and install manually (faster for repeated builds)
+uv tool run maturin build --release
+uv pip install --force-reinstall target/wheels/PyR0-0.2.0-*.whl
 
-# This builds the Rust extension and installs it to site-packages
-# Now imports will use the compiled version with all features
+# Option 2: Let uv handle everything (slower, rebuilds from scratch)
+uv sync --no-editable
 ```
 
 **For development workflows:**
 
 - **Quick iteration (editable)**: Use `uv tool run maturin develop` to build the extension into the source directory
-- **Testing built wheels**: Use `uv sync --no-editable` or install wheels directly with `uv pip install`
+- **Testing changes**: Build wheel + force reinstall (Option 1 above)
+- **Clean build**: Use `uv sync --no-editable` (Option 2 above)
 - **Release testing**: Create a fresh venv and install the wheel to ensure it works correctly
 
 If you see import errors or missing attributes, check where Python is importing from:

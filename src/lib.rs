@@ -112,6 +112,14 @@ fn verify_receipt(receipt: &SegmentReceipt) -> PyResult<()> {
     receipt.verify_integrity()
 }
 
+/// Prepare input data for passing to guest - simple pass-through of bytes
+/// The Python side is responsible for proper serialization
+#[pyfunction]
+fn prepare_input<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    Ok(pyo3::types::PyBytes::new(py, data))
+}
+
+/// Legacy function - kept for backward compatibility
 /// Serialize data using RISC Zero's serde format for passing to guest
 #[pyfunction]
 fn serialize_for_guest<'py>(py: Python<'py>, data: Vec<Vec<u8>>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
@@ -149,6 +157,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(join_succinct_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(join_segment_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
-    m.add_function(wrap_pyfunction!(serialize_for_guest, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_input, m)?)?;
+    m.add_function(wrap_pyfunction!(serialize_for_guest, m)?)?;  // Keep for backward compatibility
     Ok(())
 }

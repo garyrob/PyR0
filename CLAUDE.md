@@ -62,15 +62,40 @@ uv tool run maturin develop
 - Missing attributes like `image_id` on PyO3 classes
 - Tests using outdated code even after rebuilding
 - Errors like `AttributeError: 'pyr0.Image' object has no attribute 'image_id'`
+- New Python modules not found: `ImportError: cannot import name 'serialization'`
 
-**Solution**: Use non-editable install for testing compiled features:
+**Solution**: After making changes to ANY file (Rust or Python), rebuild and reinstall:
+
 ```bash
-# Build and install as a regular (non-editable) package
-uv sync --no-editable
+# ALWAYS DO THIS AFTER MAKING CHANGES:
 
-# This builds the Rust extension and installs to site-packages
-# Now imports will use the compiled version with all features
+# Step 1: Build the wheel
+uv tool run maturin build --release
+
+# Step 2: Force reinstall (IMPORTANT: use --force-reinstall to override cache)
+uv pip install --force-reinstall target/wheels/PyR0-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
+
+# Alternative (slower but automatic):
+uv sync --no-editable
 ```
+
+**Common Issues and Solutions**:
+
+1. **`ImportError: cannot import name 'serialization'`**
+   - Cause: New Python module not in installed package
+   - Fix: Rebuild and force reinstall (see above)
+
+2. **`AttributeError: 'pyr0.Image' object has no attribute 'image_id'`**
+   - Cause: Using old version or editable install
+   - Fix: Rebuild and force reinstall (see above)
+
+3. **Changes not taking effect**
+   - Cause: Cached wheel or editable install
+   - Fix: Use `--force-reinstall` flag
+
+4. **`uv sync --no-editable` seems to do nothing**
+   - Cause: No version change detected
+   - Fix: Use manual build + install instead
 
 **Debugging Import Issues**:
 ```python
@@ -78,11 +103,15 @@ import pyr0
 print(pyr0.__file__)  
 # Good: /path/to/.venv/lib/python3.12/site-packages/pyr0/__init__.py
 # Bad:  /path/to/project/src/pyr0/__init__.py (editable install)
+
+# Check if new modules are available:
+print(dir(pyr0))  # Should show 'serialization' if properly installed
 ```
 
-**Workflow Options**:
-- **Development (fast iteration)**: `uv tool run maturin develop` - builds into source dir for editable mode
-- **Testing features**: `uv sync --no-editable` - builds and installs to site-packages
-- **Testing wheels**: `uv pip install target/wheels/PyR0-*.whl --force-reinstall`
+**Workflow Summary**:
+- **After ANY change**: Build wheel → Force reinstall
+- **Development (fast iteration)**: `uv tool run maturin develop` (builds into source dir)
+- **Testing changes**: `uv tool run maturin build --release` → `uv pip install --force-reinstall`
+- **Clean build**: `uv sync --no-editable` (rebuilds everything from scratch)
 
-**Note**: The `test/real_ed25519_test.py` script will detect and warn about this issue automatically.
+**Note**: The `demo/real_ed25519_test.py` script will detect and warn about the editable install issue automatically.

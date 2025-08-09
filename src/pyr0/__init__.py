@@ -1,4 +1,5 @@
 from pyr0._rust import *
+from pyr0 import serialization
 
 __all__ = [
     "load_image_from_elf",
@@ -8,7 +9,9 @@ __all__ = [
     "lift_segment_receipt",
     "join_succinct_receipts",
     "join_segment_receipts",
-    "serialize_for_guest",
+    "prepare_input",
+    "serialize_for_guest",  # Legacy - kept for backward compatibility
+    "serialization",
     "Image",
     "Segment",
     "ExitCode",
