@@ -125,4 +125,4 @@ print(dir(pyr0))  # Should show 'serialization' if properly installed
 - **Testing changes**: `uv tool run maturin build --release` → `uv pip install --force-reinstall`
 - **Clean build**: `uv sync --no-editable` (rebuilds everything from scratch)
 
-**Note**: The `demo/real_ed25519_test.py` script will detect and warn about the editable install issue automatically.
+**Note**: The `demo/risc0_ed25519_demo.py` script will detect and warn about the editable install issue automatically.

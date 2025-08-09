@@ -32,9 +32,18 @@ PyR0 provides a Python interface to RISC Zero's zero-knowledge virtual machine, 
 git clone https://github.com/garyrob/PyR0.git
 cd PyR0
 
-# Build and install with uv
+# Create virtual environment and install dependencies
+uv sync
+
+# Build and install PyR0
 uv tool run maturin build --release
 uv pip install --force-reinstall target/wheels/PyR0-*-macosx_11_0_arm64.whl
+
+# Build and install the Merkle module (optional, for Merkle tree functionality)
+cd merkle
+uv tool run maturin build --release
+cd ..
+uv pip install --force-reinstall target/wheels/merkle_py-*-macosx_11_0_arm64.whl
 ```
 
 For development with editable installs, see [CLAUDE.md](CLAUDE.md) for important notes about uv's behavior.
@@ -109,7 +118,7 @@ input_data = serialization.ed25519_input_vecs(public_key, signature, message)
 
 ### Ed25519 Signature Verification
 
-See [demo/real_ed25519_test.py](demo/real_ed25519_test.py) for a complete example of:
+See [demo/risc0_ed25519_demo.py](demo/risc0_ed25519_demo.py) for a complete example of:
 - Building a RISC Zero guest program that verifies Ed25519 signatures
 - Generating zero-knowledge proofs of signature validity
 - Verifying program identity via ImageID
@@ -148,8 +157,8 @@ uv tool run maturin develop
 uv tool run maturin build --release
 
 # Run tests/demos
-uv run demo/real_ed25519_test.py
-uv run demo/merkle_demo.py
+uv run python demo/risc0_ed25519_demo.py
+uv run python demo/merkle_demo.py
 ```
 
 ## Acknowledgments

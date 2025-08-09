@@ -30,7 +30,7 @@ if not hasattr(pyr0.Image, 'image_id'):
     sys.exit(1)
 
 # Constants
-GUEST_DIR = Path(__file__).parent / "real_ed25519_test_guest"
+GUEST_DIR = Path(__file__).parent / "risc0_ed25519_demo_guest"
 ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "ed25519-guest-input"
 PUBLIC_KEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
 VALID_SIG = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
