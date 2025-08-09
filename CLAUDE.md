@@ -44,6 +44,17 @@ features = ["pyo3/extension-module"]
 - `uv tool run` runs tools without installing them in the environment
 - `uv pip install` would install into the environment (but we don't need this for maturin)
 
+## Running Python Scripts with uv
+
+To run Python scripts in the uv environment:
+```bash
+# Correct way - uv runs the script directly:
+uv run scriptname.py
+
+# NOT this way:
+uv run python scriptname.py  # ❌ Wrong
+```
+
 ## Building for Distribution
 
 To build a wheel for distribution:

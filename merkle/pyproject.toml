@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "merkle-py"
+version = "0.1.0"
+description = "Sparse Merkle tree implementation with Poseidon hash for zero-knowledge proofs"
+requires-python = ">=3.8"
+dependencies = []
+
+[tool.maturin]
+python-source = "src"
+module-name = "merkle_py._rust"
+features = ["pyo3/extension-module"]
