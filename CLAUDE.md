@@ -125,4 +125,28 @@ print(dir(pyr0))  # Should show 'serialization' if properly installed
 - **Testing changes**: `uv tool run maturin build --release` → `uv pip install --force-reinstall`
 - **Clean build**: `uv sync --no-editable` (rebuilds everything from scratch)
 
-**Note**: The `demo/real_ed25519_test.py` script will detect and warn about the editable install issue automatically.
+**Note**: The `demo/ed25519_demo.py` script will detect and warn about the editable install issue automatically.
+
+## Version Control Requirements
+
+**CRITICAL**: Version numbers MUST be updated for every push to GitHub.
+
+### Before Every Push:
+1. **ASK the user** what the version number should be
+2. Update version in THREE places:
+   - `pyproject.toml` - the `version = "x.x.x"` line
+   - `Cargo.toml` - the `version = "x.x.x"` line  
+   - `README.md` - the version badge and any version references
+3. Include version in commit message (e.g., "Add feature X (v0.0.4)")
+4. Create and push a git tag:
+   ```bash
+   git tag -a vX.X.X -m "Description of changes"
+   git push origin vX.X.X
+   ```
+
+### Version Numbering Scheme:
+- **0.0.x** - Pre-alpha experimental releases
+- **0.x.x** - Alpha/Beta releases
+- **1.x.x** - Stable releases (future)
+
+**Remember**: ALWAYS ask "What version number should this be?" before pushing to GitHub.

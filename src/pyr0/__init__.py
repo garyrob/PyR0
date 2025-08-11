@@ -1,16 +1,22 @@
 from pyr0._rust import *
 from pyr0 import serialization
+from typing import Union
+
+# Type alias for better clarity
+ProofReceipt = Union['SegmentReceipt', 'SuccinctReceipt']
 
 __all__ = [
-    "load_image_from_elf",
+    # API functions
+    "load_image",
     "execute_with_input", 
-    "prove_segment",
-    "verify_receipt",
-    "lift_segment_receipt",
+    "generate_proof",
+    "verify_proof",
+    "lift_receipt",
     "join_succinct_receipts",
     "join_segment_receipts",
     "prepare_input",
-    "serialize_for_guest",  # Legacy - kept for backward compatibility
+    
+    # Modules and classes
     "serialization",
     "Image",
     "Segment",
@@ -18,4 +24,7 @@ __all__ = [
     "SessionInfo",
     "SegmentReceipt",
     "SuccinctReceipt",
+    
+    # Type aliases
+    "ProofReceipt",
 ]

@@ -135,7 +135,7 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         # Load the guest program
         with open(ELF_PATH, "rb") as f:
             elf_data = f.read()
-        image = pyr0.load_image_from_elf(elf_data)
+        image = pyr0.load_image(elf_data)  # Use new consistent name
         
         print(f"\nProver's private inputs:")
         print(f"  k_pub: 0x{selected_user['k_pub'].hex()[:16]}...")
@@ -149,24 +149,24 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         
         # k_pub, r, e - each byte as u32
         for byte_val in selected_user['k_pub']:
-            input_data += pyr0.serialization.u32(byte_val)
+            input_data += pyr0.serialization.to_u32(byte_val)  # Use new consistent name
         for byte_val in selected_user['r']:
-            input_data += pyr0.serialization.u32(byte_val)
+            input_data += pyr0.serialization.to_u32(byte_val)
         for byte_val in selected_user['e']:
-            input_data += pyr0.serialization.u32(byte_val)
+            input_data += pyr0.serialization.to_u32(byte_val)
         
         # Path length
-        input_data += pyr0.serialization.u32(len(merkle_siblings))
+        input_data += pyr0.serialization.to_u32(len(merkle_siblings))
         
         # Path siblings - each byte as u32
         for sibling in merkle_siblings:
             for byte_val in sibling:
-                input_data += pyr0.serialization.u32(byte_val)
+                input_data += pyr0.serialization.to_u32(byte_val)
         
         # Indices length and values
-        input_data += pyr0.serialization.u32(len(merkle_bits))
+        input_data += pyr0.serialization.to_u32(len(merkle_bits))
         for bit in merkle_bits:
-            input_data += pyr0.serialization.u32(1 if bit else 0)
+            input_data += pyr0.serialization.to_u32(1 if bit else 0)
         
         # Debug: Check the data
         print(f"\nDebug - Input data size: {len(input_data)} bytes")
@@ -185,7 +185,7 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
             return None
         
         # Generate the proof
-        receipt = pyr0.prove_segment(segments[0])
+        receipt = pyr0.generate_proof(segments[0])  # Use new consistent name
         elapsed = time.time() - start_time
         
         print(f"✓ Proof generated in {elapsed:.2f} seconds")
@@ -235,7 +235,7 @@ def verify_zkp(receipt, expected_root):
         print("  ✗ Any private user data")
         
         print("\nVerifying proof...")
-        pyr0.verify_receipt(receipt)
+        pyr0.verify_proof(receipt)  # Use new consistent name
         print("✓ Proof is VALID!")
         
         print("\nConclusion:")

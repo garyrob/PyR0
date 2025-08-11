@@ -17,7 +17,7 @@ use risc0_zkvm::{
 };
 
 #[pyfunction]
-fn load_image_from_elf(elf: &Bound<'_, PyBytes>) -> PyResult<Image> {
+fn load_image(elf: &Bound<'_, PyBytes>) -> PyResult<Image> {
     let elf_bytes = elf.as_bytes();
     // Compute the image ID from the ELF
     let image_id = risc0_binfmt::compute_image_id(elf_bytes)
@@ -55,14 +55,14 @@ fn execute_with_input(
 }
 
 #[pyfunction]
-fn prove_segment(segment: &Segment) -> PyResult<SegmentReceipt> {
+fn generate_proof(segment: &Segment) -> PyResult<SegmentReceipt> {
     let verifier_context = risc0_zkvm::VerifierContext::default();
     let res = segment.prove(&verifier_context)?;
     Ok(res)
 }
 
 #[pyfunction]
-fn lift_segment_receipt(segment_receipt: &SegmentReceipt) -> PyResult<SuccinctReceipt> {
+fn lift_receipt(segment_receipt: &SegmentReceipt) -> PyResult<SuccinctReceipt> {
     let prover = get_prover_server(&ProverOpts::default())?;
     Ok(SuccinctReceipt::new(
         prover.lift(segment_receipt.get_segment_receipt_ref())?,
@@ -108,7 +108,7 @@ fn join_segment_receipts(receipts: Vec<PyRef<SegmentReceipt>>) -> PyResult<Succi
 
 #[pyfunction]
 #[pyo3(signature = (receipt))]
-fn verify_receipt(receipt: &SegmentReceipt) -> PyResult<()> {
+fn verify_proof(receipt: &SegmentReceipt) -> PyResult<()> {
     receipt.verify_integrity()
 }
 
@@ -119,27 +119,6 @@ fn prepare_input<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, pyo3:
     Ok(pyo3::types::PyBytes::new(py, data))
 }
 
-/// Legacy function - kept for backward compatibility
-/// Serialize data using RISC Zero's serde format for passing to guest
-#[pyfunction]
-fn serialize_for_guest<'py>(py: Python<'py>, data: Vec<Vec<u8>>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
-    // The guest reads three separate Vec<u8> values, not a Vec<Vec<u8>>
-    // So we need to serialize each one separately and concatenate
-    let mut all_words = Vec::new();
-    
-    for vec in data {
-        let serialized = risc0_zkvm::serde::to_vec(&vec)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to serialize: {}", e)))?;
-        all_words.extend(serialized);
-    }
-    
-    // Convert Vec<u32> to Vec<u8>
-    let bytes: Vec<u8> = all_words.iter()
-        .flat_map(|&word| word.to_le_bytes())
-        .collect();
-    
-    Ok(pyo3::types::PyBytes::new(py, &bytes))
-}
 
 #[pymodule]
 fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -150,14 +129,15 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Receipt>()?;
     m.add_class::<SegmentReceipt>()?;
     m.add_class::<SuccinctReceipt>()?;
-    m.add_function(wrap_pyfunction!(load_image_from_elf, m)?)?;
+    
+    // API functions
+    m.add_function(wrap_pyfunction!(load_image, m)?)?;
     m.add_function(wrap_pyfunction!(execute_with_input, m)?)?;
-    m.add_function(wrap_pyfunction!(prove_segment, m)?)?;
-    m.add_function(wrap_pyfunction!(lift_segment_receipt, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_proof, m)?)?;
+    m.add_function(wrap_pyfunction!(lift_receipt, m)?)?;
     m.add_function(wrap_pyfunction!(join_succinct_receipts, m)?)?;
     m.add_function(wrap_pyfunction!(join_segment_receipts, m)?)?;
-    m.add_function(wrap_pyfunction!(verify_receipt, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_proof, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_input, m)?)?;
-    m.add_function(wrap_pyfunction!(serialize_for_guest, m)?)?;  // Keep for backward compatibility
     Ok(())
 }

@@ -52,17 +52,17 @@ import pyr0
 # Load a RISC Zero guest program
 with open("guest_program.elf", "rb") as f:
     elf_data = f.read()
-image = pyr0.load_image_from_elf(elf_data)
+image = pyr0.load_image(elf_data)  # Simplified name
 
 # Execute with input
 input_data = pyr0.prepare_input(b"your input data")
 segments, info = pyr0.execute_with_input(image, input_data)
 
 # Generate a proof
-receipt = pyr0.prove_segment(segments[0])
+receipt = pyr0.generate_proof(segments[0])  # Clearer name
 
 # Verify the proof
-pyr0.verify_receipt(receipt)
+pyr0.verify_proof(receipt)  # Consistent naming
 ```
 
 ### Merkle Trees with Poseidon Hash
@@ -97,10 +97,13 @@ Prepare data for RISC Zero guest programs:
 from pyr0 import serialization
 
 # Serialize various data types for guest programs
-data = serialization.vec_u8(bytes_data)  # Vec<u8> with length prefix
-data = serialization.u32(value)          # 32-bit unsigned integer
-data = serialization.u64(value)          # 64-bit unsigned integer
-data = serialization.string(text)        # String with length prefix
+data = serialization.to_vec_u8(bytes_data)  # Vec<u8> with length prefix
+data = serialization.to_u32(value)          # 32-bit unsigned integer
+data = serialization.to_u64(value)          # 64-bit unsigned integer
+data = serialization.to_string(text)        # String with length prefix
+data = serialization.to_bool(value)         # Boolean value
+data = serialization.to_bytes32(data)       # Fixed [u8; 32] array
+data = serialization.to_bytes64(data)       # Fixed [u8; 64] array
 
 # Prepare Ed25519 signature verification input
 input_data = serialization.ed25519_input_vecs(public_key, signature, message)
@@ -110,7 +113,7 @@ input_data = serialization.ed25519_input_vecs(public_key, signature, message)
 
 ### Ed25519 Signature Verification
 
-See [demo/real_ed25519_test.py](demo/real_ed25519_test.py) for a complete example of:
+See [demo/ed25519_demo.py](demo/ed25519_demo.py) for a complete example of:
 - Building a RISC Zero guest program that verifies Ed25519 signatures
 - Generating zero-knowledge proofs of signature validity
 - Verifying program identity via ImageID
@@ -149,7 +152,7 @@ uv tool run maturin develop
 uv tool run maturin build --release
 
 # Run tests/demos
-uv run demo/real_ed25519_test.py
+uv run demo/ed25519_demo.py
 uv run demo/merkle_demo.py
 ```
 

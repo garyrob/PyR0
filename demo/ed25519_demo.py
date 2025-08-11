@@ -15,7 +15,7 @@ from pyr0 import serialization
 
 # Debug: check what we actually imported
 print(f"Imported pyr0 from: {pyr0.__file__}")
-print(f"Image has image_id? {hasattr(pyr0.Image, 'image_id')}")
+print(f"Using new API: {hasattr(pyr0, 'load_image')}")
 if not hasattr(pyr0.Image, 'image_id'):
     print("\n❌ ERROR: Using outdated pyr0 version without image_id support")
     print(f"   Currently importing from: {pyr0.__file__}")
@@ -30,14 +30,12 @@ if not hasattr(pyr0.Image, 'image_id'):
     sys.exit(1)
 
 # Constants
-GUEST_DIR = Path(__file__).parent / "real_ed25519_test_guest"
+GUEST_DIR = Path(__file__).parent / "ed25519_demo_guest"
 ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "ed25519-guest-input"
 PUBLIC_KEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
 VALID_SIG = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
 INVALID_SIG = "3b41da0837e8f4e7b1ba8d9e0db233a22a5764c84e8870c049e7e210c512a4532dbab6222d5e98dd50fe0fb186c039fe9a0387bf43de1fbf655c101db2540b06"
 MESSAGE = ""
-
-print(f"Using pyr0 with serialize_for_guest: {hasattr(pyr0, 'serialize_for_guest')}")
 
 # Delete existing ELF to ensure fresh build
 if ELF_PATH.exists():
@@ -72,7 +70,7 @@ print(f"  Size: {os.path.getsize(ELF_PATH):,} bytes")
 # Load the ELF
 with open(ELF_PATH, "rb") as f:
     elf_data = f.read()
-image = pyr0.load_image_from_elf(elf_data)
+image = pyr0.load_image(elf_data)  # Use new consistent name
 print("✓ ELF loaded into image")
 
 # Get and display the program's unique ID
@@ -145,7 +143,7 @@ else:
 # Generate proof
 print("\nGenerating proof...")
 start = time.time()
-receipt = pyr0.prove_segment(segments[0])
+receipt = pyr0.generate_proof(segments[0])  # Use new consistent name
 proof_time = time.time() - start
 print(f"Proof generated in {proof_time:.2f}s")
 
@@ -159,7 +157,7 @@ if receipt_program_id != PROGRAM_ID:
 print(f"✓ Program ID verified: {receipt_program_id[:16]}...{receipt_program_id[-16:]}")
 
 # Verify the cryptographic proof
-pyr0.verify_receipt(receipt)
+pyr0.verify_proof(receipt)  # Use new consistent name
 print("✓ Proof verified")
 
 # Test with invalid signature

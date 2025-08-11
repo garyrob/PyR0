@@ -9,7 +9,7 @@ import struct
 from typing import Union, List
 
 
-def vec_u8(data: Union[bytes, bytearray, List[int]]) -> bytes:
+def to_vec_u8(data: Union[bytes, bytearray, List[int]]) -> bytes:
     """
     Serialize data as Rust Vec<u8> for RISC Zero's serde format.
     
@@ -27,7 +27,7 @@ def vec_u8(data: Union[bytes, bytearray, List[int]]) -> bytes:
         Serialized bytes in RISC Zero format
     
     Example:
-        >>> vec_u8(b"AB")  # 2 bytes
+        >>> to_vec_u8(b"AB")  # 2 bytes
         # Results in: length(2) + A as u32 + B as u32 = 12 bytes total
     """
     if isinstance(data, (list, tuple)):
@@ -51,7 +51,7 @@ def vec_u8(data: Union[bytes, bytearray, List[int]]) -> bytes:
     return result
 
 
-def array_u8_32(data: Union[bytes, bytearray, List[int]]) -> bytes:
+def to_bytes32(data: Union[bytes, bytearray, List[int]]) -> bytes:
     """
     Serialize data as Rust [u8; 32] (fixed-size array).
     
@@ -82,7 +82,7 @@ def array_u8_32(data: Union[bytes, bytearray, List[int]]) -> bytes:
     return data
 
 
-def array_u8_64(data: Union[bytes, bytearray, List[int]]) -> bytes:
+def to_bytes64(data: Union[bytes, bytearray, List[int]]) -> bytes:
     """
     Serialize data as Rust [u8; 64] (fixed-size array).
     
@@ -113,7 +113,7 @@ def array_u8_64(data: Union[bytes, bytearray, List[int]]) -> bytes:
     return data
 
 
-def u32(value: int) -> bytes:
+def to_u32(value: int) -> bytes:
     """
     Serialize an integer as Rust u32.
     
@@ -131,7 +131,7 @@ def u32(value: int) -> bytes:
     return struct.pack('<I', value)
 
 
-def u64(value: int) -> bytes:
+def to_u64(value: int) -> bytes:
     """
     Serialize an integer as Rust u64.
     
@@ -149,7 +149,7 @@ def u64(value: int) -> bytes:
     return struct.pack('<Q', value)
 
 
-def string(text: str) -> bytes:
+def to_string(text: str) -> bytes:
     """
     Serialize a string as Rust String.
     
@@ -165,7 +165,7 @@ def string(text: str) -> bytes:
     return struct.pack('<Q', len(encoded)) + encoded
 
 
-def bool_value(value: bool) -> bytes:
+def to_bool(value: bool) -> bytes:
     """
     Serialize a boolean as Rust bool.
     
@@ -227,7 +227,7 @@ def ed25519_input_vecs(public_key: bytes, signature: bytes, message: bytes) -> b
     Returns:
         Serialized data ready for prepare_input()
     """
-    return vec_u8(public_key) + vec_u8(signature) + vec_u8(message)
+    return to_vec_u8(public_key) + to_vec_u8(signature) + to_vec_u8(message)
 
 
 def ed25519_input_arrays(public_key: bytes, signature: bytes, message: bytes) -> bytes:
@@ -248,4 +248,4 @@ def ed25519_input_arrays(public_key: bytes, signature: bytes, message: bytes) ->
     Returns:
         Serialized data ready for prepare_input()
     """
-    return array_u8_32(public_key) + array_u8_64(signature) + vec_u8(message)
+    return to_bytes32(public_key) + to_bytes64(signature) + to_vec_u8(message)

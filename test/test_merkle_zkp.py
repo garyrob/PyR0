@@ -39,9 +39,9 @@ def test_pyr0():
         import pyr0
         print("✓ PyR0 module loaded")
         
-        # Test serialization functions
+        # Test serialization functions (using new names)
         test_bytes = b"hello"
-        serialized = pyr0.serialization.vec_u8(test_bytes)
+        serialized = pyr0.serialization.to_vec_u8(test_bytes)  # Use new consistent name
         print(f"✓ Serialization works, serialized {len(test_bytes)} bytes to {len(serialized)} bytes")
         
         return True
