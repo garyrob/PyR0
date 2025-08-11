@@ -180,6 +180,38 @@ def bool_value(value: bool) -> bytes:
     return b'\x01' if value else b'\x00'
 
 
+def raw_bytes(data: Union[bytes, bytearray, List[int]]) -> bytes:
+    """
+    Pass through raw bytes without any transformation or length prefix.
+    
+    This is useful when the guest code uses env::read_slice() with a 
+    buffer of known size, avoiding the overhead of serde serialization.
+    
+    Format: Raw bytes, no prefix or transformation
+    
+    Args:
+        data: Bytes to pass through
+    
+    Returns:
+        The exact bytes provided
+    
+    Example:
+        >>> raw_bytes(b"hello")
+        b'hello'  # Just 5 bytes, no length prefix
+    """
+    if isinstance(data, (list, tuple)):
+        data = bytes(data)
+    elif isinstance(data, bytearray):
+        data = bytes(data)
+    elif not isinstance(data, bytes):
+        if hasattr(data, 'tobytes'):
+            data = data.tobytes()
+        else:
+            data = bytes(data)
+    
+    return data
+
+
 # Convenience functions for common patterns
 
 def ed25519_input_vecs(public_key: bytes, signature: bytes, message: bytes) -> bytes:

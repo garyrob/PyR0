@@ -1,10 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-**⚠️ Alpha Release - Apple Silicon Only**
+[![Version](https://img.shields.io/badge/version-0.0.3-orange)](https://github.com/garyrob/PyR0/releases)
+**⚠️ Experimental Pre-Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an alpha release currently targeting Apple Silicon (M1/M2/M3) Macs only. Support for Intel Macs, Linux, and Windows is planned for future releases.
+> **Note**: This is an experimental pre-alpha release (v0.0.3) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
