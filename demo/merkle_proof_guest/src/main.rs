@@ -8,11 +8,11 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use risc0_zkvm::guest::env;
-use serde::{Deserialize, Serialize};
+use borsh::BorshSerialize;
 use sha2::{Sha256, Digest};
 
-// Output structure
-#[derive(Debug, Serialize)]
+// Output structure - using Borsh for cross-language compatibility
+#[derive(BorshSerialize)]
 struct MerkleProofOutput {
     root: [u8; 32],       // Computed Merkle root
     k_pub: [u8; 32],      // Public key (optionally exposed)
@@ -127,8 +127,9 @@ fn main() {
         k_pub: k_pub,  // Optionally expose k_pub as public
     };
     
-    // Commit the output to the journal (public output)
-    env::commit(&output);
+    // Serialize with Borsh and commit as raw bytes
+    let bytes = borsh::to_vec(&output).unwrap();
+    env::commit_slice(&bytes);
 }
 
 // Alternative version that uses Poseidon hash (placeholder for now)

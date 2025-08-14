@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import json
 import time
+from borsh_construct import CStruct, U8
 
 # For demonstration, we'll simulate the hash functions
 def sha256_hash(*args):
@@ -191,8 +192,38 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         print(f"✓ Proof generated in {elapsed:.2f} seconds")
         
         # The journal contains the public outputs (root and k_pub)
-        journal = segments[0].journal if hasattr(segments[0], 'journal') else b""
+        # Get journal from the receipt (after proof generation)
+        journal = receipt.journal_bytes()
         print(f"✓ Public output size: {len(journal)} bytes")
+        
+        # Define the Borsh schema matching our Rust struct
+        MerkleProofOutput = CStruct(
+            "root" / U8[32],
+            "k_pub" / U8[32],
+        )
+        
+        # Parse the journal using Borsh
+        print("\nJournal contents (public outputs from proof):")
+        
+        if len(journal) == 64:  # Expected size for 32 + 32 bytes
+            try:
+                output = MerkleProofOutput.parse(journal)
+                root_bytes = bytes(output.root)
+                kpub_bytes = bytes(output.k_pub)
+                
+                print(f"  Merkle root: 0x{root_bytes.hex()}")
+                print(f"  Public key:  0x{kpub_bytes.hex()}")
+                
+                # Verify the k_pub matches what we sent
+                if kpub_bytes == selected_user['k_pub']:
+                    print("  ✓ Public key matches the prover's input")
+                else:
+                    print("  ✗ Public key mismatch!")
+                    
+            except Exception as e:
+                print(f"  Error parsing journal with Borsh: {e}")
+        else:
+            print(f"  Unexpected journal size: {len(journal)} bytes (expected 64)")
         
         return receipt, journal
         
@@ -285,7 +316,11 @@ def main():
     root = tree.root()
     
     print(f"\n✓ Built Merkle tree with {len(commitments)} commitments")
-    print(f"  Tree root: {root[:32]}...")
+    print(f"  Tree root (string): {root[:32]}...")
+    # Also show the actual root bytes for comparison
+    root_hex = root[2:] if root.startswith('0x') else root
+    root_bytes = bytes.fromhex(root_hex.zfill(64))
+    print(f"  Tree root (hex):    0x{root_bytes.hex()}")
     print("\nThis root is PUBLIC - everyone can see it")
     
     # Step 3: Select a user to prove membership (privately)

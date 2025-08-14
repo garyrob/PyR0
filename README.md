@@ -1,11 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.0.3-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.0.4-orange)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Pre-Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental pre-alpha release (v0.0.3) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **Note**: This is an experimental pre-alpha release (v0.0.4) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
@@ -22,7 +22,7 @@ PyR0 provides a Python interface to RISC Zero's zero-knowledge virtual machine, 
 **This alpha release requires:**
 - Apple Silicon Mac (M1, M2, or M3)
 - macOS 11.0 or later
-- Python 3.8+
+- Python 3.8.3+
 - Rust toolchain
 - [uv](https://docs.astral.sh/uv/) package manager
 
@@ -60,6 +60,9 @@ segments, info = pyr0.execute_with_input(image, input_data)
 
 # Generate a proof
 receipt = pyr0.generate_proof(segments[0])  # Clearer name
+
+# Get the journal (public outputs) from the receipt
+journal = receipt.journal_bytes()
 
 # Verify the proof
 pyr0.verify_proof(receipt)  # Consistent naming
@@ -109,6 +112,24 @@ data = serialization.to_bytes64(data)       # Fixed [u8; 64] array
 input_data = serialization.ed25519_input_vecs(public_key, signature, message)
 ```
 
+### Journal Deserialization
+
+For cross-language compatibility, guest programs should use Borsh serialization:
+
+```python
+from borsh_construct import CStruct, U8, U64
+
+# Define schema matching your Rust struct
+OutputSchema = CStruct(
+    "field1" / U8[32],   # [u8; 32] in Rust
+    "field2" / U64,      # u64 in Rust
+)
+
+# Parse journal from receipt
+journal = receipt.journal_bytes()
+output = OutputSchema.parse(journal)
+```
+
 ## Examples
 
 ### Ed25519 Signature Verification
@@ -118,12 +139,12 @@ See [demo/ed25519_demo.py](demo/ed25519_demo.py) for a complete example of:
 - Generating zero-knowledge proofs of signature validity
 - Verifying program identity via ImageID
 
-### Merkle Tree Operations
+### Merkle Zero-Knowledge Proofs
 
-See [demo/merkle_demo.py](demo/merkle_demo.py) for examples of:
-- Building sparse Merkle trees
-- Generating Merkle proofs for zero-knowledge circuits
-- Using Poseidon hash over BN254 field
+See [demo/merkle_zkp_demo.py](demo/merkle_zkp_demo.py) for a complete example of:
+- Building Merkle trees with user commitments
+- Generating zero-knowledge proofs of membership
+- Privacy-preserving authentication (proving you're in a set without revealing which member)
 
 ## Project Structure
 
@@ -137,6 +158,10 @@ PyR0/
 ├── merkle/           # Merkle tree module
 │   └── src/          # Merkle tree implementation
 ├── demo/             # Example scripts
+│   ├── merkle_zkp_demo.py     # Merkle ZKP demonstration
+│   ├── merkle_proof_guest/    # RISC Zero guest for Merkle proofs
+│   └── ed25519_demo.py        # Ed25519 verification demo
+├── test/             # Test scripts
 └── CLAUDE.md         # Development notes
 ```
 
@@ -145,15 +170,13 @@ PyR0/
 This project uses [maturin](https://www.maturin.rs/) for building Python extensions from Rust. Key commands:
 
 ```bash
-# Build for development
-uv tool run maturin develop
-
 # Build release wheel
 uv tool run maturin build --release
 
 # Run tests/demos
 uv run demo/ed25519_demo.py
-uv run demo/merkle_demo.py
+uv run demo/merkle_zkp_demo.py
+uv run test/test_merkle_zkp.py
 ```
 
 ## Acknowledgments

@@ -86,13 +86,26 @@ impl SegmentReceipt {
     
     /// Get the journal (public outputs) as bytes
     pub fn journal_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
-        let _receipt = self.segment_receipt.as_ref()
+        let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
-        // In RISC Zero 1.2, we need to get the journal from the claim
-        // For now, return empty bytes as the API has changed
-        // TODO: Figure out how to extract journal from SegmentReceipt in 1.2
-        Ok(pyo3::types::PyBytes::new(py, &[]))
+        // In RISC Zero 1.2, journal is in receipt.claim.output.journal
+        // The fields are wrapped in MaybePruned, so we need to unwrap them
+        let output_opt = receipt.claim.output.as_value()
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Journal output is pruned"))?;
+        
+        match output_opt.as_ref() {
+            Some(output) => {
+                // Get the journal bytes from the output
+                let journal_bytes = output.journal.as_value()
+                    .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Journal is pruned"))?;
+                Ok(pyo3::types::PyBytes::new(py, journal_bytes))
+            }
+            None => {
+                // Guest didn't write a journal, return empty bytes
+                Ok(pyo3::types::PyBytes::new(py, &[]))
+            }
+        }
     }
     
     /// Cryptographically verifies the segment seal against its embedded claim.
