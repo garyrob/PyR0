@@ -1,7 +1,6 @@
 use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
 use risc0_zkvm::{ProverOpts, get_prover_server};
 use risc0_zkvm::sha::Digestible;
 use serde::{Deserialize, Serialize};
@@ -85,7 +84,8 @@ impl SegmentReceipt {
     }
     
     /// Get the journal (public outputs) as bytes
-    pub fn journal_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    #[getter]
+    pub fn journal(&self) -> PyResult<Vec<u8>> {
         let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
@@ -99,20 +99,23 @@ impl SegmentReceipt {
                 // Get the journal bytes from the output
                 let journal_bytes = output.journal.as_value()
                     .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Journal is pruned"))?;
-                Ok(pyo3::types::PyBytes::new(py, journal_bytes))
+                Ok(journal_bytes.clone())
             }
             None => {
                 // Guest didn't write a journal, return empty bytes
-                Ok(pyo3::types::PyBytes::new(py, &[]))
+                Ok(vec![])
             }
         }
     }
     
+    /// Legacy method name for compatibility
+    pub fn journal_bytes(&self) -> PyResult<Vec<u8>> {
+        self.journal()
+    }
+    
     /// Cryptographically verifies the segment seal against its embedded claim.
-    /// Note: This does NOT check success exit code or expected image ID.
-    /// For full verification including exit code and image ID checks, use the top-level Receipt.verify() method.
     #[pyo3(signature = ())]
-    pub fn verify_integrity(&self) -> PyResult<()> {
+    pub fn verify(&self) -> PyResult<()> {
         let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
@@ -122,17 +125,10 @@ impl SegmentReceipt {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Verification failed: {}", e)))
     }
     
-    /// Legacy verify method - calls verify_integrity
-    /// Deprecated: Use verify_integrity() instead
-    pub fn verify(&self) -> PyResult<bool> {
-        match self.verify_integrity() {
-            Ok(()) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
     
     /// Get the exit code from the receipt's claim
-    pub fn get_exit_code(&self) -> PyResult<u32> {
+    #[getter]
+    pub fn exit_code(&self) -> PyResult<u32> {
         let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
@@ -147,12 +143,13 @@ impl SegmentReceipt {
     }
     
     /// Get the program ID (image ID) from the receipt
-    pub fn program_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+    #[getter]
+    pub fn program_id(&self) -> PyResult<Vec<u8>> {
         let receipt = self.segment_receipt.as_ref()
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Receipt is None"))?;
         
         // The program ID is the digest of the pre-execution SystemState
         let digest = receipt.claim.pre.digest();
-        Ok(PyBytes::new(py, digest.as_bytes()))
+        Ok(digest.as_bytes().to_vec())
     }
 }

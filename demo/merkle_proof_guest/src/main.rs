@@ -5,6 +5,7 @@
 #![no_std]
 
 extern crate alloc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use risc0_zkvm::guest::env;
@@ -69,50 +70,50 @@ fn verify_merkle_path(
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    // RISC Zero serializes everything through env::read()
-    // Each byte becomes a u32 in the input stream
+    // Use env::read_slice() for efficient byte reading
+    // Python sends raw bytes, no u32 expansion
     
-    // Read k_pub (32 bytes, each as u32)
+    // Read all input at once into a buffer
+    // We know the exact size: 32*3 + 32*16 + 16 = 96 + 512 + 16 = 624 bytes
+    let mut input_buffer = vec![0u8; 624];
+    env::read_slice(&mut input_buffer);
+    
+    // Create a cursor to read from the buffer
+    let mut offset = 0;
+    
+    // Read k_pub (32 bytes)
     let mut k_pub = [0u8; 32];
-    for i in 0..32 {
-        k_pub[i] = env::read::<u32>() as u8;
-    }
+    k_pub.copy_from_slice(&input_buffer[offset..offset+32]);
+    offset += 32;
     
-    // Read r (32 bytes, each as u32)
+    // Read r (32 bytes)
     let mut r = [0u8; 32];
-    for i in 0..32 {
-        r[i] = env::read::<u32>() as u8;
-    }
+    r.copy_from_slice(&input_buffer[offset..offset+32]);
+    offset += 32;
     
-    // Read e (32 bytes, each as u32)
+    // Read e (32 bytes)
     let mut e = [0u8; 32];
-    for i in 0..32 {
-        e[i] = env::read::<u32>() as u8;
-    }
+    e.copy_from_slice(&input_buffer[offset..offset+32]);
+    offset += 32;
     
-    // Read path length
-    let path_len: u32 = env::read();
-    assert_eq!(path_len, 16, "Merkle path must have 16 levels");
+    // Read path length (16 for our fixed-depth tree)
+    // For simplicity, we'll hardcode 16 levels since that's what we always use
+    let path_len = 16usize;
     
-    // Read path siblings (each is 32 bytes)
+    // Read path siblings (16 * 32 bytes)
     let mut path = Vec::new();
     for _ in 0..path_len {
         let mut sibling = [0u8; 32];
-        for j in 0..32 {
-            sibling[j] = env::read::<u32>() as u8;
-        }
+        sibling.copy_from_slice(&input_buffer[offset..offset+32]);
+        offset += 32;
         path.push(sibling);
     }
     
-    // Read indices length
-    let indices_len: u32 = env::read();
-    assert_eq!(indices_len, 16, "Must have 16 index bits");
-    
-    // Read indices (each byte as u32)
+    // Read indices (16 bytes, one per level)
     let mut indices = Vec::new();
-    for _ in 0..indices_len {
-        let bit_val: u32 = env::read();
-        indices.push(bit_val != 0);
+    for _ in 0..path_len {
+        indices.push(input_buffer[offset] != 0);
+        offset += 1;
     }
     
     // Step 1: Compute the leaf commitment C = Hash(k_pub || r || e)

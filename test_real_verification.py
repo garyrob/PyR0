@@ -17,7 +17,7 @@ TEST_PROGRAM = bytes([
 try:
     # Load as image
     print("1. Loading test program...")
-    image = pyr0.load_image_from_elf(TEST_PROGRAM)
+    image = pyr0.load_image(TEST_PROGRAM)
     print("   ✓ Loaded (this might fail with invalid ELF)")
 except Exception as e:
     print(f"   ✗ Failed to load: {e}")
@@ -40,12 +40,8 @@ except Exception as e:
         else:
             print("   ✓ Good: Fake receipt failed verification")
             
-        # Also try the verify_receipt function
-        try:
-            pyr0.verify_receipt(fake_receipt)
-            print("   ⚠️  WARNING: verify_receipt() didn't raise exception for fake receipt!")
-        except Exception as e:
-            print(f"   ✓ Good: verify_receipt() raised exception: {type(e).__name__}")
+        # The verify_receipt function has been removed in favor of receipt.verify()
+        # which was already tested above
             
     except Exception as e:
         print(f"   Error during fake receipt test: {e}")

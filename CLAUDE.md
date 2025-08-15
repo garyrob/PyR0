@@ -1,5 +1,27 @@
 # Claude Development Notes
 
+## Essential Development Workflow
+
+**After ANY changes to Rust code (src/*.rs):**
+
+```bash
+# 1. Build the wheel
+uv tool run maturin build --release
+# Maturin will output: "📦 Built wheel for CPython 3.12 to /path/to/PyR0-X.X.X-cp312-cp312-platform.whl"
+
+# 2. Force reinstall (CRITICAL - must use --force-reinstall)
+# Option A: Use the * wildcard to match the latest built wheel
+uv pip install --force-reinstall target/wheels/PyR0-*.whl
+
+# Option B: Copy the exact filename from maturin's output
+# Example: uv pip install --force-reinstall target/wheels/PyR0-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+```
+
+**Why --force-reinstall is required:**
+- Without it, uv uses cached versions even after rebuilding
+- Changes won't take effect without forcing reinstallation
+- This is the #1 cause of "changes not working" issues
+
 ## Using PyO3 with uv - Key Steps
 
 ### Setup
@@ -84,7 +106,7 @@ uv tool run maturin develop
 uv tool run maturin build --release
 
 # Step 2: Force reinstall (IMPORTANT: use --force-reinstall to override cache)
-uv pip install --force-reinstall target/wheels/PyR0-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
+uv pip install --force-reinstall target/wheels/PyR0-*.whl
 
 # Alternative (slower but automatic):
 uv sync --no-editable
@@ -137,7 +159,7 @@ print(dir(pyr0))  # Should show 'serialization' if properly installed
    - `pyproject.toml` - the `version = "x.x.x"` line
    - `Cargo.toml` - the `version = "x.x.x"` line  
    - `README.md` - the version badge and any version references
-3. Include version in commit message (e.g., "Add feature X (v0.0.4)")
+3. Include version in commit message (e.g., "Add feature X (v0.1.0)")
 4. Create and push a git tag:
    ```bash
    git tag -a vX.X.X -m "Description of changes"

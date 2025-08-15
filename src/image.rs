@@ -1,7 +1,6 @@
 use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
 use risc0_binfmt::{MemoryImage, Program};
 use risc0_zkvm::sha::Digest;
 use risc0_zkvm_platform::memory::GUEST_MAX_MEM;
@@ -44,18 +43,19 @@ impl Image {
     
     /// Return the zkVM ImageID as raw bytes (32 bytes)
     #[getter]
-    fn image_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+    fn id(&self) -> PyResult<Vec<u8>> {
         match &self.image_id {
-            Some(id) => Ok(PyBytes::new(py, id.as_bytes())),
+            Some(id) => Ok(id.as_bytes().to_vec()),
             None => Err(PyErr::new::<pyo3::exceptions::PyAttributeError, _>(
                 "Image has no ID (not loaded from ELF)"
             ))
         }
     }
     
-    /// Alias for image_id
-    fn program_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        self.image_id(py)
+    /// Legacy alias for compatibility
+    #[getter]
+    fn image_id(&self) -> PyResult<Vec<u8>> {
+        self.id()
     }
 
     fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {

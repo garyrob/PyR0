@@ -1,11 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.0.4-orange)](https://github.com/garyrob/PyR0/releases)
-**⚠️ Experimental Pre-Alpha - Apple Silicon Only**
+[![Version](https://img.shields.io/badge/version-0.1.0-orange)](https://github.com/garyrob/PyR0/releases)
+**⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental pre-alpha release (v0.0.4) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **Note**: This is an experimental alpha release (v0.1.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
@@ -52,20 +52,20 @@ import pyr0
 # Load a RISC Zero guest program
 with open("guest_program.elf", "rb") as f:
     elf_data = f.read()
-image = pyr0.load_image(elf_data)  # Simplified name
+image = pyr0.load_image(elf_data)
 
-# Execute with input
-input_data = pyr0.prepare_input(b"your input data")
-segments, info = pyr0.execute_with_input(image, input_data)
+# One-step proof generation (execution + proof)
+input_data = b"your input data"  # Direct bytes, no wrapper needed
+receipt = pyr0.prove(image, input_data)
 
-# Generate a proof
-receipt = pyr0.generate_proof(segments[0])  # Clearer name
-
-# Get the journal (public outputs) from the receipt
-journal = receipt.journal_bytes()
+# Get the journal (public outputs) as a property
+journal = receipt.journal
 
 # Verify the proof
-pyr0.verify_proof(receipt)  # Consistent naming
+receipt.verify()
+
+# Access the image ID
+image_id = image.id
 ```
 
 ### Merkle Trees with Poseidon Hash
@@ -99,7 +99,7 @@ Prepare data for RISC Zero guest programs:
 ```python
 from pyr0 import serialization
 
-# Serialize various data types for guest programs
+# Optional serialization helpers for guest programs
 data = serialization.to_vec_u8(bytes_data)  # Vec<u8> with length prefix
 data = serialization.to_u32(value)          # 32-bit unsigned integer
 data = serialization.to_u64(value)          # 64-bit unsigned integer
@@ -108,8 +108,9 @@ data = serialization.to_bool(value)         # Boolean value
 data = serialization.to_bytes32(data)       # Fixed [u8; 32] array
 data = serialization.to_bytes64(data)       # Fixed [u8; 64] array
 
-# Prepare Ed25519 signature verification input
-input_data = serialization.ed25519_input_vecs(public_key, signature, message)
+# Convenience functions for common patterns
+input_data = serialization.ed25519_input(public_key, signature, message)
+input_data = serialization.merkle_proof_input(leaf, siblings, indices)
 ```
 
 ### Journal Deserialization
@@ -126,7 +127,7 @@ OutputSchema = CStruct(
 )
 
 # Parse journal from receipt
-journal = receipt.journal_bytes()
+journal = receipt.journal  # Access as property
 output = OutputSchema.parse(journal)
 ```
 

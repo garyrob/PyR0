@@ -144,56 +144,40 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         print(f"  e:     0x{selected_user['e'].hex()[:16]}... (secret!)")
         print(f"  Merkle path: {len(merkle_siblings)} siblings (secret!)")
         
-        # Prepare input for the guest program using PyR0 serialization
-        # RISC Zero expects each byte as a u32 word
+        # Prepare input for the guest program - now using raw bytes
+        # Guest uses env::read_slice() for efficient reading
         input_data = b""
         
-        # k_pub, r, e - each byte as u32
-        for byte_val in selected_user['k_pub']:
-            input_data += pyr0.serialization.to_u32(byte_val)  # Use new consistent name
-        for byte_val in selected_user['r']:
-            input_data += pyr0.serialization.to_u32(byte_val)
-        for byte_val in selected_user['e']:
-            input_data += pyr0.serialization.to_u32(byte_val)
+        # k_pub, r, e - raw 32 bytes each
+        input_data += selected_user['k_pub']
+        input_data += selected_user['r']
+        input_data += selected_user['e']
         
-        # Path length
-        input_data += pyr0.serialization.to_u32(len(merkle_siblings))
-        
-        # Path siblings - each byte as u32
+        # Path siblings - 16 * 32 bytes
         for sibling in merkle_siblings:
-            for byte_val in sibling:
-                input_data += pyr0.serialization.to_u32(byte_val)
+            input_data += sibling
         
-        # Indices length and values
-        input_data += pyr0.serialization.to_u32(len(merkle_bits))
+        # Indices - 16 bytes (one byte per bit)
         for bit in merkle_bits:
-            input_data += pyr0.serialization.to_u32(1 if bit else 0)
+            input_data += bytes([1 if bit else 0])
         
         # Debug: Check the data
         print(f"\nDebug - Input data size: {len(input_data)} bytes")
-        print(f"  First 100 bytes: {input_data[:100].hex()}")
+        print(f"  Expected: 624 bytes (96 + 512 + 16)")
+        assert len(input_data) == 624, f"Input size mismatch: {len(input_data)} != 624"
         
         print(f"\nExecuting proof generation in zkVM...")
         start_time = time.time()
         
-        # Execute the guest program
-        # Use prepare_input to wrap the bytes properly
-        prepared_input = pyr0.prepare_input(input_data)
-        segments, info = pyr0.execute_with_input(image, prepared_input)
-        
-        if not segments or len(segments) == 0:
-            print("⚠️  Execution failed")
-            return None
-        
-        # Generate the proof
-        receipt = pyr0.generate_proof(segments[0])  # Use new consistent name
+        # Use the new simplified API - no prepare_input needed
+        receipt = pyr0.prove(image, input_data)
         elapsed = time.time() - start_time
         
         print(f"✓ Proof generated in {elapsed:.2f} seconds")
         
         # The journal contains the public outputs (root and k_pub)
-        # Get journal from the receipt (after proof generation)
-        journal = receipt.journal_bytes()
+        # Get journal from the receipt using the new property
+        journal = receipt.journal
         print(f"✓ Public output size: {len(journal)} bytes")
         
         # Define the Borsh schema matching our Rust struct
@@ -266,7 +250,7 @@ def verify_zkp(receipt, expected_root):
         print("  ✗ Any private user data")
         
         print("\nVerifying proof...")
-        pyr0.verify_proof(receipt)  # Use new consistent name
+        receipt.verify()  # Use the new method on the receipt
         print("✓ Proof is VALID!")
         
         print("\nConclusion:")

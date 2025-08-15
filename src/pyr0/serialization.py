@@ -1,8 +1,13 @@
 """
 Serialization helpers for preparing data to send to RISC Zero guest programs.
 
-These functions serialize Python data into the binary format expected by 
-Rust's bincode deserializer used in env::read().
+This module provides:
+1. Basic primitives for serializing Python data to Rust types
+2. Convenience functions for common cryptographic operations (Ed25519, Merkle proofs)
+3. Helper patterns for standard RISC Zero use cases
+
+These are optional convenience functions - you can use them directly or as 
+examples for building your own serialization logic.
 """
 
 import struct
@@ -212,12 +217,19 @@ def raw_bytes(data: Union[bytes, bytearray, List[int]]) -> bytes:
     return data
 
 
-# Convenience functions for common patterns
+# ============================================================================
+# Convenience functions for common cryptographic patterns
+# ============================================================================
 
-def ed25519_input_vecs(public_key: bytes, signature: bytes, message: bytes) -> bytes:
+def ed25519_input(public_key: bytes, signature: bytes, message: bytes) -> bytes:
     """
     Serialize Ed25519 verification input as three Vec<u8> values.
-    This matches the current guest implementation.
+    Alias for ed25519_input_vecs for cleaner API.
+    
+    Guest code would read this as:
+        let public_key: Vec<u8> = env::read();
+        let signature: Vec<u8> = env::read();
+        let message: Vec<u8> = env::read();
     
     Args:
         public_key: 32-byte public key
@@ -225,7 +237,35 @@ def ed25519_input_vecs(public_key: bytes, signature: bytes, message: bytes) -> b
         message: Variable-length message
     
     Returns:
-        Serialized data ready for prepare_input()
+        Serialized bytes ready for pyr0.prove() or execute_with_input()
+    
+    Example:
+        input_data = ed25519_input(pk_bytes, sig_bytes, msg_bytes)
+        receipt = pyr0.prove(image, input_data)
+    """
+    return to_vec_u8(public_key) + to_vec_u8(signature) + to_vec_u8(message)
+
+
+def ed25519_input_vecs(public_key: bytes, signature: bytes, message: bytes) -> bytes:
+    """
+    Serialize Ed25519 verification input as three Vec<u8> values.
+    
+    Guest code would read this as:
+        let public_key: Vec<u8> = env::read();
+        let signature: Vec<u8> = env::read();
+        let message: Vec<u8> = env::read();
+    
+    Args:
+        public_key: 32-byte public key
+        signature: 64-byte signature
+        message: Variable-length message
+    
+    Returns:
+        Serialized bytes ready for pyr0.prove() or execute_with_input()
+    
+    Example:
+        input_data = ed25519_input_vecs(pk_bytes, sig_bytes, msg_bytes)
+        receipt = pyr0.prove(image, input_data)
     """
     return to_vec_u8(public_key) + to_vec_u8(signature) + to_vec_u8(message)
 
@@ -235,7 +275,7 @@ def ed25519_input_arrays(public_key: bytes, signature: bytes, message: bytes) ->
     Serialize Ed25519 verification input with fixed arrays for key and signature.
     More efficient than Vec<u8> for fixed-size data.
     
-    Guest would read as:
+    Guest code would read this as:
         let public_key: [u8; 32] = env::read();
         let signature: [u8; 64] = env::read();
         let message: Vec<u8> = env::read();
@@ -246,6 +286,88 @@ def ed25519_input_arrays(public_key: bytes, signature: bytes, message: bytes) ->
         message: Variable-length message
     
     Returns:
-        Serialized data ready for prepare_input()
+        Serialized bytes ready for pyr0.prove() or execute_with_input()
+    
+    Example:
+        input_data = ed25519_input_arrays(pk_bytes, sig_bytes, msg_bytes)
+        receipt = pyr0.prove(image, input_data)
     """
     return to_bytes32(public_key) + to_bytes64(signature) + to_vec_u8(message)
+
+
+def merkle_proof_input(leaf_data: bytes, siblings: List[bytes], indices: List[bool]) -> bytes:
+    """
+    Serialize input for a Merkle proof verification.
+    
+    Guest code would read this as:
+        let leaf: [u8; 32] = env::read();
+        let siblings: Vec<[u8; 32]> = env::read();
+        let indices: Vec<bool> = env::read();
+    
+    Args:
+        leaf_data: 32-byte leaf hash
+        siblings: List of 32-byte sibling hashes
+        indices: List of boolean path bits (left=False, right=True)
+    
+    Returns:
+        Serialized bytes ready for pyr0.prove() or execute_with_input()
+    
+    Example:
+        input_data = merkle_proof_input(leaf_hash, path_siblings, path_bits)
+        receipt = pyr0.prove(image, input_data)
+    """
+    # Serialize leaf as fixed array
+    result = to_bytes32(leaf_data)
+    
+    # Serialize siblings as Vec<[u8; 32]>
+    result += to_u64(len(siblings))  # Vec length
+    for sibling in siblings:
+        result += to_bytes32(sibling)
+    
+    # Serialize indices as Vec<bool>
+    result += to_u64(len(indices))  # Vec length
+    for bit in indices:
+        result += to_bool(bit)
+    
+    return result
+
+
+def merkle_commitment_input(k_pub: bytes, r: bytes, e: bytes, 
+                           siblings: List[bytes], indices: List[bool]) -> bytes:
+    """
+    Serialize input for a Merkle commitment proof (2LA-style).
+    
+    This is for proving knowledge of a commitment C = Hash(k_pub || r || e)
+    that exists in a Merkle tree, without revealing r, e, or the path.
+    
+    Guest code would read this as:
+        let k_pub: [u8; 32] = env::read();
+        let r: [u8; 32] = env::read();
+        let e: [u8; 32] = env::read();
+        let siblings: Vec<[u8; 32]> = env::read();
+        let indices: Vec<bool> = env::read();
+    
+    Args:
+        k_pub: 32-byte public key
+        r: 32-byte randomness (secret)
+        e: 32-byte external identity nullifier (secret)
+        siblings: List of 32-byte sibling hashes in Merkle path
+        indices: List of boolean path bits
+    
+    Returns:
+        Serialized bytes ready for pyr0.prove() or execute_with_input()
+    """
+    result = to_bytes32(k_pub)
+    result += to_bytes32(r)
+    result += to_bytes32(e)
+    
+    # Serialize Merkle path
+    result += to_u64(len(siblings))
+    for sibling in siblings:
+        result += to_bytes32(sibling)
+    
+    result += to_u64(len(indices))
+    for bit in indices:
+        result += to_bool(bit)
+    
+    return result

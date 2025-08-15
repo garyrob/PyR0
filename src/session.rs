@@ -116,11 +116,13 @@ impl SessionInfo {
         }
     }
 
-    pub fn get_journal(&self) -> PyResult<Vec<u8>> {
+    #[getter]
+    pub fn journal(&self) -> PyResult<Vec<u8>> {
         Ok(self.journal.as_ref().unwrap().clone())
     }
 
-    pub fn get_exit_code(&self) -> PyResult<ExitCode> {
+    #[getter]
+    pub fn exit_code(&self) -> PyResult<ExitCode> {
         Ok(self.exit_code.clone())
     }
 

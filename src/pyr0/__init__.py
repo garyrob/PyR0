@@ -6,15 +6,16 @@ from typing import Union
 ProofReceipt = Union['SegmentReceipt', 'SuccinctReceipt']
 
 __all__ = [
-    # API functions
+    # Core API functions
     "load_image",
+    "prove",  # New unified function
+    
+    # Advanced API (for multi-segment or custom workflows)
     "execute_with_input", 
     "generate_proof",
-    "verify_proof",
     "lift_receipt",
     "join_succinct_receipts",
     "join_segment_receipts",
-    "prepare_input",
     
     # Modules and classes
     "serialization",
