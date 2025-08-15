@@ -2,7 +2,6 @@
 """Test that PyR0 verification actually rejects invalid proofs."""
 
 import pyr0
-import pickle
 import os
 
 print("=== Testing PyR0 Verification ===\n")

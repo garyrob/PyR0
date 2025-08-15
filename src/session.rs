@@ -1,4 +1,3 @@
-use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -18,7 +17,6 @@ impl ExitCode {
     }
 }
 
-impl Pickleable for ExitCode {}
 
 #[pymethods]
 impl ExitCode {
@@ -74,14 +72,6 @@ impl ExitCode {
         Self { exit_code: None }
     }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
 }
 
 #[pyclass(module = "pyr0")]
@@ -104,7 +94,6 @@ impl SessionInfo {
     }
 }
 
-impl Pickleable for SessionInfo {}
 
 #[pymethods]
 impl SessionInfo {
@@ -126,12 +115,4 @@ impl SessionInfo {
         Ok(self.exit_code.clone())
     }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
 }

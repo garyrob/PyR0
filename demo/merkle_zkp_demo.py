@@ -144,22 +144,18 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         print(f"  e:     0x{selected_user['e'].hex()[:16]}... (secret!)")
         print(f"  Merkle path: {len(merkle_siblings)} siblings (secret!)")
         
-        # Prepare input for the guest program - now using raw bytes
-        # Guest uses env::read_slice() for efficient reading
-        input_data = b""
+        # Use the serialization helper to prepare input
+        # This creates the exact format expected by the guest program
+        from pyr0 import serialization
         
-        # k_pub, r, e - raw 32 bytes each
-        input_data += selected_user['k_pub']
-        input_data += selected_user['r']
-        input_data += selected_user['e']
-        
-        # Path siblings - 16 * 32 bytes
-        for sibling in merkle_siblings:
-            input_data += sibling
-        
-        # Indices - 16 bytes (one byte per bit)
-        for bit in merkle_bits:
-            input_data += bytes([1 if bit else 0])
+        # Use the merkle commitment helper for guests using env::read_slice()
+        input_data = serialization.merkle_commitment_input(
+            selected_user['k_pub'],
+            selected_user['r'],
+            selected_user['e'],
+            merkle_siblings,
+            merkle_bits
+        )
         
         # Debug: Check the data
         print(f"\nDebug - Input data size: {len(input_data)} bytes")

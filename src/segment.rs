@@ -1,4 +1,3 @@
-use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
 use risc0_zkvm::{ProverOpts, get_prover_server};
@@ -26,7 +25,6 @@ impl Segment {
     }
 }
 
-impl Pickleable for Segment {}
 
 #[pymethods]
 impl Segment {
@@ -35,14 +33,6 @@ impl Segment {
         Self { segment: None }
     }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
 }
 
 #[pyclass(module = "pyr0")]
@@ -63,7 +53,6 @@ impl SegmentReceipt {
     }
 }
 
-impl Pickleable for SegmentReceipt {}
 
 #[pymethods]
 impl SegmentReceipt {
@@ -74,14 +63,6 @@ impl SegmentReceipt {
         }
     }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
     
     /// Get the journal (public outputs) as bytes
     #[getter]
@@ -106,11 +87,6 @@ impl SegmentReceipt {
                 Ok(vec![])
             }
         }
-    }
-    
-    /// Legacy method name for compatibility
-    pub fn journal_bytes(&self) -> PyResult<Vec<u8>> {
-        self.journal()
     }
     
     /// Cryptographically verifies the segment seal against its embedded claim.

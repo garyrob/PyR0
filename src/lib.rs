@@ -1,7 +1,6 @@
 mod image;
 mod receipt;
 mod segment;
-mod serialization;
 mod session;
 mod succinct;
 

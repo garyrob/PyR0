@@ -1,4 +1,3 @@
-use crate::serialization::Pickleable;
 use anyhow::Result;
 use pyo3::prelude::*;
 use risc0_binfmt::{MemoryImage, Program};
@@ -29,7 +28,6 @@ impl Image {
     }
 }
 
-impl Pickleable for Image {}
 
 #[pymethods]
 impl Image {
@@ -51,19 +49,5 @@ impl Image {
             ))
         }
     }
-    
-    /// Legacy alias for compatibility
-    #[getter]
-    fn image_id(&self) -> PyResult<Vec<u8>> {
-        self.id()
-    }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
 }

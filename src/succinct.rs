@@ -1,4 +1,3 @@
-use crate::serialization::Pickleable;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +19,6 @@ impl SuccinctReceipt {
     }
 }
 
-impl Pickleable for SuccinctReceipt {}
 
 #[pymethods]
 impl SuccinctReceipt {
@@ -31,12 +29,4 @@ impl SuccinctReceipt {
         }
     }
 
-    fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.to_bytes(py)
-    }
-
-    fn __setstate__(&mut self, py: Python<'_>, state: PyObject) -> PyResult<()> {
-        *self = Self::from_bytes(state, py)?;
-        Ok(())
-    }
 }
