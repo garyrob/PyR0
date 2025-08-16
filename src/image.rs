@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct Image {
     memory_image: Option<MemoryImage>,
     image_id: Option<Digest>,
+    elf_bytes: Vec<u8>,
 }
 
 impl Image {
@@ -20,11 +21,16 @@ impl Image {
         Ok(Self {
             memory_image: Some(image),
             image_id: Some(image_id),
+            elf_bytes: elf.to_vec(),
         })
     }
 
     pub fn get_image(&self) -> MemoryImage {
         self.memory_image.as_ref().unwrap().clone()
+    }
+    
+    pub fn get_elf(&self) -> &[u8] {
+        &self.elf_bytes
     }
 }
 
@@ -36,6 +42,7 @@ impl Image {
         Self { 
             memory_image: None,
             image_id: None,
+            elf_bytes: Vec::new(),
         }
     }
     

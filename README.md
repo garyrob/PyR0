@@ -1,11 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.2.0-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-orange)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental alpha release (v0.2.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **Note**: This is an experimental alpha release (v0.3.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
@@ -28,6 +28,65 @@ The typical workflow:
 2. Compile it to RISC-V ELF binary
 3. Use PyR0 to load the ELF, provide input, and generate a proof
 4. Share the proof and journal (public outputs) for verification
+
+## Guest Program Development
+
+### Basic Guest Setup
+
+A minimal RISC Zero guest program requires proper configuration:
+
+**Cargo.toml:**
+```toml
+[package]
+name = "my-guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Basic setup - works for simple guests
+risc0-zkvm = { version = "1.2", default-features = false, features = ["std"] }
+```
+
+### Memory Management
+
+⚠️ **Critical for complex guests**: The default bump allocator never frees memory, causing "Out of memory!" errors even with moderate data.
+
+Enable the heap allocator for guests that:
+- Process variable-length data
+- Use collections (Vec, HashMap, etc.)
+- Perform string operations
+- Run iterative algorithms
+
+```toml
+[dependencies]
+risc0-zkvm = { version = "1.2", default-features = false, features = ["std", "heap-embedded-alloc"] }
+```
+
+*Note: The heap allocator adds ~5% cycle overhead but prevents memory exhaustion.*
+
+### Common Guest Patterns
+
+**Reading Input:**
+```rust
+// For raw bytes (most efficient, works with pyr0.prove(image, raw_bytes))
+use std::io::Read;
+let mut buffer = Vec::new();
+env::stdin().read_to_end(&mut buffer).unwrap();
+
+// For serialized data (when using PyR0 serialization helpers)
+let data: MyStruct = env::read();
+```
+
+**Writing to Journal:**
+```rust
+// Simple values
+env::commit(&my_u32);
+
+// Complex structures (using Borsh)
+use borsh::BorshSerialize;
+let output = MyOutput { /* ... */ };
+env::commit_slice(&borsh::to_vec(&output).unwrap());
+```
 
 ## Installation
 

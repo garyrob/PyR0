@@ -6,6 +6,7 @@ This demonstrates a Python interface to a sparse Merkle tree that uses
 Poseidon hash over BN254, compatible with Noir/Barretenberg ZK circuits.
 """
 
+import sys
 import merkle_py
 
 def test_basic_operations():
@@ -144,19 +145,26 @@ def main():
     print("\nThis test suite demonstrates a sparse Merkle tree implementation")
     print("compatible with zero-knowledge proof circuits (Noir/Barretenberg).")
     
-    tree = test_basic_operations()
-    test_poseidon_hash()
-    test_batch_operations()
-    
-    print("\n" + "╔" + "=" * 58 + "╗")
-    print("║" + " " * 20 + "ALL TESTS PASSED ✅" + " " * 19 + "║")
-    print("╚" + "=" * 58 + "╝")
-    
-    print("\nThis implementation provides:")
-    print("  • Sparse Merkle tree supporting 2^256 keys")
-    print("  • Poseidon hash function over BN254 field")
-    print("  • 16-level Merkle proofs for ZK circuits")
-    print("  • Python interface via PyO3 bindings")
+    try:
+        tree = test_basic_operations()
+        test_poseidon_hash()
+        test_batch_operations()
+        
+        print("\n" + "╔" + "=" * 58 + "╗")
+        print("║" + " " * 20 + "ALL TESTS PASSED ✅" + " " * 19 + "║")
+        print("╚" + "=" * 58 + "╝")
+        
+        print("\nThis implementation provides:")
+        print("  • Sparse Merkle tree supporting 2^256 keys")
+        print("  • Poseidon hash function over BN254 field")
+        print("  • 16-level Merkle proofs for ZK circuits")
+        print("  • Python interface via PyO3 bindings")
+        return 0
+    except Exception as e:
+        print(f"\n✗ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

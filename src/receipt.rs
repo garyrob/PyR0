@@ -1,89 +1,89 @@
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use risc0_zkvm::Receipt as R0Receipt;
-use risc0_zkvm::sha::Digestible;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 
-/// A zero-knowledge proof receipt that can be shared and verified
-#[pyclass]
+use risc0_zkvm::{
+    Receipt as RiscZeroReceipt,
+    MaybePruned,
+    ExitCode,
+};
+use risc0_zkvm::sha::{Digest, Digestible};
+
+#[pyclass(module = "pyr0")]
 #[derive(Clone)]
 pub struct Receipt {
-    pub(crate) inner: R0Receipt,
+    pub(crate) inner: RiscZeroReceipt,
+}
+
+impl Receipt {
+    pub fn from_risc0(receipt: RiscZeroReceipt) -> Self {
+        Self { inner: receipt }
+    }
 }
 
 #[pymethods]
 impl Receipt {
-    /// Serialize receipt to bytes for storage/transmission
-    pub fn to_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let bytes = bincode::serialize(&self.inner)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Failed to serialize receipt: {}", e)
-            ))?;
-        Ok(PyBytes::new(py, &bytes))
+    #[getter]
+    pub fn journal(&self) -> PyResult<Vec<u8>> {
+        Ok(self.inner.journal.bytes.clone())
     }
-    
-    /// Create receipt from bytes
-    #[staticmethod]
-    pub fn from_bytes(data: &[u8]) -> PyResult<Self> {
-        let inner = bincode::deserialize(data)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Failed to deserialize receipt: {}", e)
-            ))?;
-        Ok(Receipt { inner })
-    }
-    
-    /// Get the journal (public outputs) as bytes
-    pub fn journal_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        Ok(PyBytes::new(py, &self.inner.journal.bytes))
-    }
-    
-    /// Get the program ID that was executed
-    pub fn program_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        // The program ID is the image_id from the claim
-        let claim = self.inner.claim()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to get claim: {}", e)
-            ))?;
-        let claim_value = claim.as_value()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Claim value is pruned: {}", e)
-            ))?;
-        let digest = claim_value.pre.digest();
-        let id_bytes = digest.as_bytes();
-        Ok(PyBytes::new(py, id_bytes))
-    }
-    
-    /// Get a string representation for debugging
-    pub fn __repr__(&self) -> String {
-        format!("Receipt(journal_len={}, proven=true)", self.inner.journal.bytes.len())
-    }
-    
-    /// Verify the receipt with the given image ID.
-    /// This performs full verification including:
-    /// - Cryptographic verification of the seal
-    /// - Checking that the guest exited successfully
-    /// - Verifying the image ID matches the expected value
-    /// - Ensuring the journal has not been tampered with
-    pub fn verify(&self, image_id_hex: &str) -> PyResult<()> {
-        // Parse hex string to bytes
-        let hex_bytes = hex::decode(image_id_hex)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Invalid image ID hex string: {}", e)
-            ))?;
+
+    #[getter]
+    pub fn exit_code(&self) -> PyResult<u32> {
+        let claim_pruned = self.inner.claim()
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Failed to decode claim: {e}")))?;
         
-        // Convert to fixed-size array
-        let mut bytes = [0u8; 32];
-        if hex_bytes.len() != 32 {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Image ID must be exactly 32 bytes (64 hex characters)"
-            ));
-        }
-        bytes.copy_from_slice(&hex_bytes);
+        let claim = match claim_pruned.as_value() {
+            Ok(claim) => claim,
+            Err(_) => return Err(PyErr::new::<PyRuntimeError, _>("Claim is pruned")),
+        };
         
-        let image_id = risc0_zkvm::sha::Digest::from_bytes(bytes);
-            
+        let code = match claim.exit_code {
+            ExitCode::Halted(user) | ExitCode::Paused(user) => user,
+            ExitCode::SystemSplit | ExitCode::SessionLimit => u32::MAX,
+        };
+        Ok(code)
+    }
+
+    /// Pre-state digest claimed by the receipt (often used as an image-id-like value).
+    #[getter]
+    pub fn program_id(&self) -> PyResult<Vec<u8>> {
+        let claim_pruned = self.inner.claim()
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Failed to decode claim: {e}")))?;
+        
+        let claim = match claim_pruned.as_value() {
+            Ok(claim) => claim,
+            Err(_) => return Err(PyErr::new::<PyRuntimeError, _>("Claim is pruned")),
+        };
+        
+        let digest = match &claim.pre {
+            MaybePruned::Value(state) => state.digest(),
+            MaybePruned::Pruned(d)    => d.clone(),
+        };
+        Ok(digest.as_bytes().to_vec())
+    }
+
+    /// Verify the receipt against a trusted image ID
+    /// 
+    /// SECURITY: Always provide the image_id from a trusted source
+    /// (e.g., from Image.id or a compile-time constant).
+    /// Never derive it from the receipt itself!
+    pub fn verify(&self, image_id_bytes: &Bound<'_, PyAny>) -> PyResult<()> {
+        let bytes: Vec<u8> = image_id_bytes.extract()?;
+        let image_id = Digest::try_from(bytes.as_slice())
+            .map_err(|_| PyErr::new::<PyValueError, _>("image_id must be 32 bytes"))?;
         self.inner.verify(image_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Verification failed: {}", e)
-            ))
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Verification failed: {e}")))
+    }
+    
+    /// Deprecated: Use verify() instead
+    /// This method is kept for backward compatibility but is identical to verify()
+    pub fn verify_with_image_id(&self, image_id_bytes: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.verify(image_id_bytes)
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("Receipt(journal_len={}, seal_size={})",
+                self.inner.journal.bytes.len(),
+                self.inner.seal_size())
     }
 }

@@ -142,7 +142,7 @@ if receipt_program_id != PROGRAM_ID:
 print(f"✓ Program ID verified: {receipt_program_id[:16]}...{receipt_program_id[-16:]}")
 
 # Verify the cryptographic proof
-receipt.verify()
+receipt.verify(image.id)  # Pass the trusted image ID
 print("✓ Proof verified")
 
 # Test with invalid signature
@@ -152,7 +152,7 @@ sig_bytes = bytes.fromhex(INVALID_SIG)
 input_data = serialization.ed25519_input(pk_bytes, sig_bytes, msg_bytes)
 
 # For the second test, we just execute, no need for proof
-segments, info = pyr0.execute_with_input(image, input_data)
+info = pyr0.dry_run(image, input_data)
 journal = info.journal
 
 print(f"Journal: {len(journal)} bytes")
@@ -167,13 +167,20 @@ if journal[0] != 99:
 
 import struct
 result = struct.unpack('<I', journal[16:20])[0]
+test_passed = False
 if result == 0:
     print("✅ Signature INVALID - Test PASSED")
+    test_passed = True
 elif result == 1:
     print("❌ Signature reported as VALID - Test FAILED")
 else:
     print(f"❌ Unexpected result: {result}")
 
 print("\n=== Summary ===")
-print("If both tests passed, the zkVM correctly validates Ed25519 signatures!")
-print("These are real cryptographic proofs in production mode.")
+if test_passed:
+    print("✓ Both tests passed! The zkVM correctly validates Ed25519 signatures!")
+    print("These are real cryptographic proofs in production mode.")
+    sys.exit(0)
+else:
+    print("✗ Some tests failed")
+    sys.exit(1)

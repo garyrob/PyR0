@@ -63,8 +63,11 @@ def test_zkp_demo():
         sys.path.insert(0, str(demo_path))
         
         from merkle_zkp_demo import main
-        main()
+        result = main()
         
+        if result != 0:
+            print(f"✗ Demo returned non-zero exit code: {result}")
+            return False
         return True
     except Exception as e:
         print(f"✗ ZKP demo failed: {e}")
@@ -79,10 +82,19 @@ if __name__ == "__main__":
     # Test each component
     merkle_ok = test_merkle_tree()
     pyr0_ok = test_pyr0()
+    demo_ok = False
     
     if merkle_ok and pyr0_ok:
         print("\n✓ All components working, running full demo...\n")
-        test_zkp_demo()
+        demo_ok = test_zkp_demo()
     else:
-        print("\n⚠️  Some components not working")
-        print("Make sure PyR0 and merkle_py are installed")
+        print("\n✗ Some components not working")
+        print("PyR0 and merkle_py are required for this test")
+    
+    # Exit with appropriate code
+    if merkle_ok and pyr0_ok and demo_ok:
+        print("\n✓ All tests passed")
+        sys.exit(0)
+    else:
+        print("\n✗ Some tests failed")
+        sys.exit(1)

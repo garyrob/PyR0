@@ -8,6 +8,7 @@ This demonstrates:
 3. Clear separation between prover (who knows the secret) and verifier
 """
 
+import sys
 import merkle_py
 import secrets
 import hashlib
@@ -121,14 +122,15 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
             ], cwd=GUEST_DIR, capture_output=True, text=True)
             
             if result.returncode != 0:
-                print("⚠️  Failed to build guest program")
+                print("✗ Failed to build guest program")
                 print(f"  Error: {result.stderr[:300] if result.stderr else 'Unknown error'}...")
                 print("\n  If you see 'no such subcommand: `+risc0`', install the RISC Zero toolchain:")
                 print("  cargo install cargo-risczero && cargo risczero install")
                 return None
             
             if not ELF_PATH.exists():
-                print("⚠️  Build succeeded but ELF not found at expected location")
+                print("✗ Build succeeded but ELF not found at expected location")
+                print(f"  Expected: {ELF_PATH}")
                 return None
             
             print(f"✓ Guest program built successfully: {ELF_PATH.name}")
@@ -185,37 +187,39 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         # Parse the journal using Borsh
         print("\nJournal contents (public outputs from proof):")
         
-        if len(journal) == 64:  # Expected size for 32 + 32 bytes
-            try:
-                output = MerkleProofOutput.parse(journal)
-                root_bytes = bytes(output.root)
-                kpub_bytes = bytes(output.k_pub)
+        if len(journal) != 64:  # Expected size for 32 + 32 bytes
+            print(f"  ✗ Unexpected journal size: {len(journal)} bytes (expected 64)")
+            return None
+            
+        try:
+            output = MerkleProofOutput.parse(journal)
+            root_bytes = bytes(output.root)
+            kpub_bytes = bytes(output.k_pub)
+            
+            print(f"  Merkle root: 0x{root_bytes.hex()}")
+            print(f"  Public key:  0x{kpub_bytes.hex()}")
+            
+            # Verify the k_pub matches what we sent
+            if kpub_bytes != selected_user['k_pub']:
+                print("  ✗ Public key mismatch!")
+                return None
                 
-                print(f"  Merkle root: 0x{root_bytes.hex()}")
-                print(f"  Public key:  0x{kpub_bytes.hex()}")
+            print("  ✓ Public key matches the prover's input")
+            return receipt, journal, image.id  # Also return image_id for verification
                 
-                # Verify the k_pub matches what we sent
-                if kpub_bytes == selected_user['k_pub']:
-                    print("  ✓ Public key matches the prover's input")
-                else:
-                    print("  ✗ Public key mismatch!")
-                    
-            except Exception as e:
-                print(f"  Error parsing journal with Borsh: {e}")
-        else:
-            print(f"  Unexpected journal size: {len(journal)} bytes (expected 64)")
+        except Exception as e:
+            print(f"  ✗ Error parsing journal with Borsh: {e}")
+            return None
         
-        return receipt, journal
-        
-    except ImportError:
-        print("\n⚠️  PyR0 not installed - cannot generate real ZKP")
-        print("Install PyR0 to enable zero-knowledge proofs")
+    except ImportError as e:
+        print(f"\n✗ FAILED: PyR0 not installed - {e}")
+        print("PyR0 is required for this demo")
         return None
     except Exception as e:
-        print(f"\n⚠️  ZKP generation failed: {e}")
+        print(f"\n✗ ZKP generation failed: {e}")
         return None
 
-def verify_zkp(receipt, expected_root):
+def verify_zkp(receipt, image_id, expected_root):
     """
     Verify the zero-knowledge proof.
     
@@ -246,7 +250,7 @@ def verify_zkp(receipt, expected_root):
         print("  ✗ Any private user data")
         
         print("\nVerifying proof...")
-        receipt.verify()  # Use the new method on the receipt
+        receipt.verify(image_id)  # Pass the trusted image ID
         print("✓ Proof is VALID!")
         
         print("\nConclusion:")
@@ -256,8 +260,8 @@ def verify_zkp(receipt, expected_root):
         
         return True
         
-    except ImportError:
-        print("\n⚠️  PyR0 not installed - cannot verify ZKP")
+    except ImportError as e:
+        print(f"\n✗ FAILED: PyR0 not installed - {e}")
         return False
     except Exception as e:
         print(f"\n✗ Verification FAILED: {e}")
@@ -273,84 +277,93 @@ def main():
     print("\nScenario: Multiple users have registered commitments.")
     print("Goal: Prove you're a registered user WITHOUT revealing which one.")
     
-    # Step 1: Create users and their commitments
-    print("\n" + "="*60)
-    print("STEP 1: SETUP - Creating User Database")
-    print("="*60)
-    
-    users = simulate_users_database()
-    print(f"\n✓ Created {len(users)} users with commitments")
-    
-    for i, user in enumerate(users[:3]):
-        print(f"\n  User {i}:")
-        print(f"    Commitment: 0x{user['commitment'].hex()[:16]}...")
-    print(f"  ... and {len(users)-3} more users")
-    
-    # Step 2: Build Merkle tree from all commitments
-    print("\n" + "="*60)
-    print("STEP 2: BUILD MERKLE TREE")
-    print("="*60)
-    
-    commitments = [user['commitment'] for user in users]
-    tree = build_merkle_tree_from_commitments(commitments)
-    root = tree.root()
-    
-    print(f"\n✓ Built Merkle tree with {len(commitments)} commitments")
-    print(f"  Tree root (string): {root[:32]}...")
-    # Also show the actual root bytes for comparison
-    root_hex = root[2:] if root.startswith('0x') else root
-    root_bytes = bytes.fromhex(root_hex.zfill(64))
-    print(f"  Tree root (hex):    0x{root_bytes.hex()}")
-    print("\nThis root is PUBLIC - everyone can see it")
-    
-    # Step 3: Select a user to prove membership (privately)
-    print("\n" + "="*60)
-    print("STEP 3: PROVER SELECTS THEIR IDENTITY (PRIVATE)")
-    print("="*60)
-    
-    # For demo, we'll prove user 3 is in the tree
-    prover_index = 3
-    selected_user = users[prover_index]
-    
-    print(f"\nProver secretly selects: User {prover_index}")
-    print(f"  Their commitment: 0x{selected_user['commitment'].hex()[:16]}...")
-    print("  (This selection is PRIVATE - verifier won't know)")
-    
-    # Step 4: Generate Merkle proof for the selected user
-    siblings, bits = get_merkle_proof_for_user(tree, selected_user['commitment'])
-    
-    print(f"\n✓ Generated Merkle proof:")
-    print(f"  Path length: {len(siblings)} siblings (padded to 16)")
-    print(f"  Direction bits: {bits[:4]}... (L=False, R=True)")
-    print("  (This proof path is PRIVATE)")
-    
-    # Step 5: Generate zero-knowledge proof
-    result = run_zkp_proof(selected_user, siblings, bits, root)
-    
-    if result:
-        receipt, journal = result
-        
-        # Step 6: Verify the proof (as a separate party would)
-        verify_zkp(receipt, root)
-        
+    try:
+        # Step 1: Create users and their commitments
         print("\n" + "="*60)
-        print("SUMMARY")
+        print("STEP 1: SETUP - Creating User Database")
         print("="*60)
-        print("\nWhat just happened:")
-        print("1. We created a Merkle tree with 8 user commitments")
-        print("2. User 3 proved they're in the tree")
-        print("3. The verifier confirmed the proof")
-        print("4. The verifier learned NOTHING about which user it was!")
-        print("\nThis enables anonymous authentication - proving you're")
-        print("a valid member without revealing your identity.")
-    else:
+        
+        users = simulate_users_database()
+        print(f"\n✓ Created {len(users)} users with commitments")
+        
+        for i, user in enumerate(users[:3]):
+            print(f"\n  User {i}:")
+            print(f"    Commitment: 0x{user['commitment'].hex()[:16]}...")
+        print(f"  ... and {len(users)-3} more users")
+        
+        # Step 2: Build Merkle tree from all commitments
         print("\n" + "="*60)
-        print("DEMO COMPLETED (without real ZKP)")
+        print("STEP 2: BUILD MERKLE TREE")
         print("="*60)
-        print("\nThe Merkle tree operations work correctly.")
-        print("To enable zero-knowledge proofs:")
-        print("  1. Install RISC Zero toolchain")
-        print("  2. Build and install PyR0")
+        
+        commitments = [user['commitment'] for user in users]
+        tree = build_merkle_tree_from_commitments(commitments)
+        root = tree.root()
+        
+        print(f"\n✓ Built Merkle tree with {len(commitments)} commitments")
+        print(f"  Tree root (string): {root[:32]}...")
+        # Also show the actual root bytes for comparison
+        root_hex = root[2:] if root.startswith('0x') else root
+        root_bytes = bytes.fromhex(root_hex.zfill(64))
+        print(f"  Tree root (hex):    0x{root_bytes.hex()}")
+        print("\nThis root is PUBLIC - everyone can see it")
+        
+        # Step 3: Select a user to prove membership (privately)
+        print("\n" + "="*60)
+        print("STEP 3: PROVER SELECTS THEIR IDENTITY (PRIVATE)")
+        print("="*60)
+        
+        # For demo, we'll prove user 3 is in the tree
+        prover_index = 3
+        selected_user = users[prover_index]
+        
+        print(f"\nProver secretly selects: User {prover_index}")
+        print(f"  Their commitment: 0x{selected_user['commitment'].hex()[:16]}...")
+        print("  (This selection is PRIVATE - verifier won't know)")
+        
+        # Step 4: Generate Merkle proof for the selected user
+        siblings, bits = get_merkle_proof_for_user(tree, selected_user['commitment'])
+        
+        print(f"\n✓ Generated Merkle proof:")
+        print(f"  Path length: {len(siblings)} siblings (padded to 16)")
+        print(f"  Direction bits: {bits[:4]}... (L=False, R=True)")
+        print("  (This proof path is PRIVATE)")
+        
+        # Step 5: Generate zero-knowledge proof
+        result = run_zkp_proof(selected_user, siblings, bits, root)
+        
+        if result:
+            receipt, journal, image_id = result
+            
+            # Step 6: Verify the proof (as a separate party would)
+            if verify_zkp(receipt, image_id, root):
+                print("\n" + "="*60)
+                print("SUMMARY")
+                print("="*60)
+                print("\nWhat just happened:")
+                print("1. We created a Merkle tree with 8 user commitments")
+                print("2. User 3 proved they're in the tree")
+                print("3. The verifier confirmed the proof")
+                print("4. The verifier learned NOTHING about which user it was!")
+                print("\nThis enables anonymous authentication - proving you're")
+                print("a valid member without revealing your identity.")
+                return 0
+            else:
+                print("\n✗ Verification failed")
+                return 1
+        else:
+            print("\n" + "="*60)
+            print("DEMO FAILED - PyR0 NOT AVAILABLE")
+            print("="*60)
+            print("\n✗ Cannot run ZKP demo without PyR0")
+            print("PyR0 is required for zero-knowledge proofs.")
+            print("Please ensure PyR0 is properly installed.")
+            return 1  # Failure - missing required dependency
+    except Exception as e:
+        print(f"\n✗ Demo failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

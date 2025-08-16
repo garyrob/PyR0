@@ -172,3 +172,100 @@ print(dir(pyr0))  # Should show 'serialization' if properly installed
 - **1.x.x** - Stable releases (future)
 
 **Remember**: ALWAYS ask "What version number should this be?" before pushing to GitHub.
+
+## Test and Demo Requirements
+
+**CRITICAL**: All tests and demos MUST follow strict error handling guidelines to ensure reliability and maintainability.
+
+### Mandatory Requirements for ALL Tests and Demos:
+
+1. **Exit Codes**: 
+   - MUST exit with code 0 on success, 1 on ANY failure
+   - MUST track failures throughout execution (e.g., `test_passed = False`)
+   - MUST NOT return success if any part failed
+
+2. **No Silent Failures**:
+   - NEVER treat missing dependencies as optional or acceptable
+   - NEVER use warning symbols (⚠️) for actual failures - use error symbols (✗)
+   - NEVER skip tests silently - missing prerequisites are failures
+   - NEVER return success when errors occurred but were caught
+
+3. **Exception Handling**:
+   - MUST fail the test if an unexpected exception occurs
+   - MUST NOT catch and ignore exceptions that indicate real problems
+   - MUST NOT continue execution after critical failures
+
+4. **Dependencies**:
+   - ALL dependencies (like PyR0, merkle_py) are REQUIRED, not optional
+   - If a dependency is missing, the test/demo MUST fail with a clear error
+   - NEVER print "install X to enable feature" - if X is needed, its absence is a failure
+
+5. **Validation**:
+   - MUST verify ALL expected outcomes, not just print them
+   - MUST fail if outputs don't match expectations (wrong size, format, values)
+   - MUST check return codes of called functions and demos
+
+### Integration with Master Test Runner:
+
+All new tests and demos MUST be added to `run_all_tests.sh`:
+
+```bash
+# Add your test/demo to the appropriate section:
+run_test "Your Test Name" "uv run path/to/your_test.py"
+```
+
+The master test runner (`./run_all_tests.sh`):
+- Runs tests and demos in sequence, aborting immediately on first failure
+- Shows colored output with clear failure messages
+- Exits with code 1 immediately upon ANY test failure
+- Exits with code 0 only if ALL tests pass (zero tolerance)
+- Does NOT skip tests for missing dependencies - all are required
+
+### Example of CORRECT Test Structure:
+
+```python
+#!/usr/bin/env python3
+import sys
+
+test_passed = True
+
+try:
+    # Test something
+    result = do_something()
+    if not result:
+        print("✗ Test failed: unexpected result")
+        test_passed = False
+except Exception as e:
+    print(f"✗ Test failed with error: {e}")
+    test_passed = False
+
+if test_passed:
+    print("✓ All tests passed")
+    sys.exit(0)
+else:
+    print("✗ Some tests failed")
+    sys.exit(1)
+```
+
+### Example of INCORRECT Patterns (NEVER DO THESE):
+
+```python
+# WRONG - Silent failure
+try:
+    import required_module
+except ImportError:
+    print("⚠️ Module not available, skipping test")  # NO!
+    return  # This hides a failure!
+
+# WRONG - Treating errors as acceptable
+if not dependency_exists:
+    print("Continuing without dependency...")  # NO!
+    # Should fail here instead
+
+# WRONG - Success despite errors
+except Exception as e:
+    print(f"Error: {e}")
+    # No test_passed = False here!  # NO!
+```
+
+**Remember**: The goal is ZERO TOLERANCE for failures. If something should work, it MUST work, or the test MUST fail visibly with exit code 1.
