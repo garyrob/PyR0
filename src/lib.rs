@@ -3,7 +3,7 @@ mod receipt;
 mod session;
 
 use crate::image::Image;
-use crate::receipt::Receipt;
+use crate::receipt::{Receipt, ExitStatus, ExitKind};
 use crate::session::{ExitCode, SessionInfo};
 use pyo3::prelude::*;
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
@@ -87,6 +87,22 @@ fn prove_with_opts(_py: Python<'_>, image: &Image, input_bytes: &Bound<'_, PyAny
 // Advanced functions removed - segments are no longer exposed
 // If needed in future, these could work with Receipt types instead
 
+/// Compute the expected image ID from an ELF file as hex string
+/// 
+/// Args:
+///     elf_bytes: The ELF binary to compute ID from
+/// 
+/// Returns:
+///     64-character hex string of the image ID
+#[pyfunction]
+fn compute_image_id_hex(elf_bytes: Vec<u8>) -> PyResult<String> {
+    let image_id = risc0_binfmt::compute_image_id(&elf_bytes)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Failed to compute image ID: {}", e)
+        ))?;
+    Ok(hex::encode(image_id))
+}
+
 
 
 
@@ -96,11 +112,14 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ExitCode>()?;
     m.add_class::<SessionInfo>()?;
     m.add_class::<Receipt>()?;
+    m.add_class::<ExitStatus>()?;
+    m.add_class::<ExitKind>()?;
     
     // Core API functions
     m.add_function(wrap_pyfunction!(load_image, m)?)?;
     m.add_function(wrap_pyfunction!(prove, m)?)?;
     m.add_function(wrap_pyfunction!(prove_with_opts, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_image_id_hex, m)?)?;
     
     // Optional debugging function
     m.add_function(wrap_pyfunction!(dry_run, m)?)?;

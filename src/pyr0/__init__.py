@@ -6,6 +6,7 @@ __all__ = [
     "load_image",
     "prove",
     "prove_with_opts",
+    "compute_image_id_hex",
     
     # Debugging functions
     "dry_run",
@@ -16,4 +17,6 @@ __all__ = [
     "Receipt",
     "ExitCode",
     "SessionInfo",
+    "ExitStatus",
+    "ExitKind",
 ]

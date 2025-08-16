@@ -41,6 +41,10 @@ run_test "Real Verification Test" "uv run test_real_verification.py"
 run_test "Security Verification Test" "uv run test_security_verification.py"
 run_test "Verify API Test" "uv run test_verify_api.py"
 
+# API tests
+echo -e "\n=== API Tests ==="
+run_test "Receipt API Test" "uv run test_receipt_api.py"
+
 # Merkle tree tests
 echo -e "\n=== Merkle Tree Tests ==="
 run_test "Merkle ZKP Test" "uv run test/test_merkle_zkp.py"
