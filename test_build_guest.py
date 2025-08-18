@@ -95,26 +95,25 @@ def test_build_guest():
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
         
-        # Test 5: Automatic binary name detection (negative test)
-        print("\n5. Testing automatic binary name detection (should fail for this guest)...")
+        # Test 5: Automatic binary name detection (positive test)
+        print("\n5. Testing automatic binary name detection...")
         try:
             # Don't specify binary name, let it detect from Cargo.toml
-            # This should fail because the actual binary is "ed25519-guest-input"
-            # but auto-detection will try "ed25519_guest_input" (underscores)
+            # This should now succeed because we correctly use the package name as-is
             start_time = time.time()
             elf_path = pyr0.build_guest(guest_dir)
             build_time = time.time() - start_time
-            print(f"   ✗ Unexpectedly succeeded with auto-detection: {elf_path.name}")
-            print("   ✗ Auto-detection should have failed for this guest")
-            test_passed = False
-        except pyr0.ElfNotFoundError as e:
-            build_time = time.time() - start_time
-            print(f"   ✓ Auto-detection correctly failed as expected")
-            print(f"   ✓ Error properly reported: ELF name mismatch (ed25519_guest_input vs ed25519-guest-input)")
-            print(f"   ⏱ Build attempt time: {build_time:.2f} seconds")
-            print("   ℹ Note: This guest requires explicit binary name due to hyphen/underscore difference")
+            print(f"   ✓ Auto-detection succeeded: {elf_path.name}")
+            print(f"   ⏱ Build time: {build_time:.2f} seconds")
+            
+            # Verify it found the correct binary
+            if elf_path.name != "ed25519-guest-input":
+                print(f"   ✗ Wrong binary name: expected 'ed25519-guest-input', got '{elf_path.name}'")
+                test_passed = False
+            else:
+                print(f"   ✓ Correctly detected binary name from Cargo.toml")
         except Exception as e:
-            print(f"   ✗ Wrong exception type: {type(e).__name__}: {e}")
+            print(f"   ✗ Auto-detection failed: {type(e).__name__}: {e}")
             test_passed = False
         
         return test_passed

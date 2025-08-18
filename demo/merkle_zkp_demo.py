@@ -113,8 +113,8 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
             print("\nBuilding RISC Zero guest program...")
             print("  (This may take a minute on first run)")
             
-            # Use the new build_guest API
-            elf_path = pyr0.build_guest(GUEST_DIR, "merkle-proof-guest")
+            # Use the new build_guest API with auto-detection
+            elf_path = pyr0.build_guest(GUEST_DIR)
             print(f"✓ Guest program built successfully: {elf_path.name}")
             
             # Load the guest program

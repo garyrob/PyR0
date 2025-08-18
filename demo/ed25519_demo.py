@@ -26,8 +26,8 @@ MESSAGE = ""
 # Build and load the guest program using the new API
 print("\nBuilding guest program...")
 try:
-    # Build guest (always rebuilds to ensure up-to-date)
-    elf_path = pyr0.build_guest(GUEST_DIR, "ed25519-guest-input")
+    # Build guest (auto-detects binary name from Cargo.toml)
+    elf_path = pyr0.build_guest(GUEST_DIR)
     print(f"✓ Guest built at: {elf_path}")
     
     # Load the ELF

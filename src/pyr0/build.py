@@ -82,7 +82,8 @@ def build_guest(
         if binary_name is None:
             package_name = cargo_data.get("package", {}).get("name")
             if package_name:
-                binary_name = package_name.replace("-", "_")
+                # Cargo uses the package name as-is for the binary name
+                binary_name = package_name
             else:
                 raise InvalidGuestDirectoryError(f"Could not determine binary name from {cargo_toml}")
     
@@ -193,64 +194,30 @@ def build_guest(
     
     # Verify ELF was created
     if not elf_path.exists():
-        # For standard structure, also check without the nested directories in case structure is different
-        if use_embed_methods:
-            # Try alternative paths
-            alt_paths = [
-                # Try without host crate name
-                workspace_root / "target" / "riscv-guest" / guest_crate_name / "riscv32im-risc0-zkvm-elf" / ("release" if release else "debug") / binary_name,
-                # Try with different binary name formats
-                elf_path.with_name(binary_name.replace("_", "-")),
-                elf_path.with_name(binary_name.replace("-", "_")),
-            ]
-            
-            for alt_path in alt_paths:
-                if alt_path.exists():
-                    print(f"Found ELF at alternative location: {alt_path}")
-                    return alt_path
-        
-        # Try to provide helpful information about what might have gone wrong
+        # Provide helpful error information
         parent_dir = elf_path.parent
         if not parent_dir.exists():
-            # Try to find where files actually got built
-            search_patterns = [
-                f"**/target/**/riscv32im-risc0-zkvm-elf/**/{binary_name}",
-                f"**/target/**/riscv32im-risc0-zkvm-elf/**/{binary_name.replace('_', '-')}",
-                f"**/target/**/riscv32im-risc0-zkvm-elf/**/{binary_name.replace('-', '_')}",
-            ]
-            
-            found_elfs = []
-            search_root = workspace_root if use_embed_methods else guest_path
-            for pattern in search_patterns:
-                found_elfs.extend(search_root.glob(pattern))
-            
-            if found_elfs:
-                # Use the first found ELF
-                actual_elf = found_elfs[0]
-                print(f"Warning: Expected ELF at {elf_path}")
-                print(f"         But found at {actual_elf}")
-                return actual_elf
-            
             raise ElfNotFoundError(
                 f"ELF not found at {elf_path}\n"
                 f"Target directory doesn't exist: {parent_dir}\n"
-                f"Searched in: {search_root}\n"
                 f"This suggests the build didn't produce any output."
             )
         
         # List what files ARE in the directory
         existing_files = list(parent_dir.glob("*"))
         if existing_files:
-            files_list = "\n  ".join(str(f.name) for f in existing_files[:5])
+            files_list = "\n  ".join(str(f.name) for f in existing_files[:10])
             raise ElfNotFoundError(
-                f"ELF not found at {elf_path}\n"
+                f"ELF not found at expected path: {elf_path}\n"
+                f"Expected binary name: {binary_name}\n"
                 f"Files found in {parent_dir}:\n  {files_list}\n"
-                f"The binary name might be different than expected: {binary_name}"
+                f"This indicates a mismatch between expected and actual binary name."
             )
         else:
             raise ElfNotFoundError(
                 f"ELF not found at {elf_path}\n"
-                f"Target directory is empty: {parent_dir}"
+                f"Target directory is empty: {parent_dir}\n"
+                f"The build may have failed silently."
             )
     
     print(f"✓ Guest program built successfully: {elf_path}")
