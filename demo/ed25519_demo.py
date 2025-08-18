@@ -4,7 +4,6 @@
 import os
 import sys
 import time
-import subprocess
 from pathlib import Path
 
 os.environ['RISC0_DEV_MODE'] = '0'
@@ -19,47 +18,32 @@ print(f"Using new API: {hasattr(pyr0, 'prove')}")
 
 # Constants
 GUEST_DIR = Path(__file__).parent / "ed25519_demo_guest"
-ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "ed25519-guest-input"
 PUBLIC_KEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
 VALID_SIG = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
 INVALID_SIG = "3b41da0837e8f4e7b1ba8d9e0db233a22a5764c84e8870c049e7e210c512a4532dbab6222d5e98dd50fe0fb186c039fe9a0387bf43de1fbf655c101db2540b06"
 MESSAGE = ""
 
-# Delete existing ELF to ensure fresh build
-if ELF_PATH.exists():
-    print(f"\nDeleting existing ELF at: {ELF_PATH}")
-    os.remove(ELF_PATH)
-    if ELF_PATH.exists():
-        print("❌ Failed to delete ELF file!")
-        sys.exit(1)
-    print("✓ ELF deleted successfully")
-else:
-    print(f"\nNo existing ELF found at: {ELF_PATH}")
-
-# Build the guest
+# Build and load the guest program using the new API
 print("\nBuilding guest program...")
-result = subprocess.run([
-    "cargo", "+risc0", "build", "--release",
-    "--target", "riscv32im-risc0-zkvm-elf"
-], cwd=GUEST_DIR)
-
-if result.returncode != 0:
-    print("❌ Build failed!")
+try:
+    # Build guest (always rebuilds to ensure up-to-date)
+    elf_path = pyr0.build_guest(GUEST_DIR, "ed25519-guest-input")
+    print(f"✓ Guest built at: {elf_path}")
+    
+    # Load the ELF
+    with open(elf_path, "rb") as f:
+        elf_data = f.read()
+    image = pyr0.load_image(elf_data)
+    print("✓ ELF loaded into image")
+except pyr0.GuestBuildFailedError as e:
+    print(f"❌ Build failed: {e}")
     sys.exit(1)
-
-# Verify ELF was created
-if not ELF_PATH.exists():
-    print(f"❌ ELF not found after build at: {ELF_PATH}")
+except pyr0.ElfNotFoundError as e:
+    print(f"❌ ELF not found: {e}")
     sys.exit(1)
-
-print(f"✓ ELF built successfully: {ELF_PATH}")
-print(f"  Size: {os.path.getsize(ELF_PATH):,} bytes")
-
-# Load the ELF
-with open(ELF_PATH, "rb") as f:
-    elf_data = f.read()
-image = pyr0.load_image(elf_data)  # Use new consistent name
-print("✓ ELF loaded into image")
+except Exception as e:
+    print(f"❌ Unexpected error: {e}")
+    sys.exit(1)
 
 # Get and display the program's unique ID
 PROGRAM_ID = image.id.hex()

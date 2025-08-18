@@ -43,6 +43,7 @@ run_test "Verify API Test" "uv run test_verify_api.py"
 
 # API tests
 echo -e "\n=== API Tests ==="
+run_test "Build Guest Test" "uv run test_build_guest.py"
 run_test "Receipt API Test" "uv run test_receipt_api.py"
 
 # Merkle tree tests

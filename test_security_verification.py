@@ -14,15 +14,16 @@ print("=== Security Test: Image ID Verification ===\n")
 
 test_passed = True
 
-# Load the test program
-test_elf_path = Path("demo/ed25519_demo_guest/target/riscv32im-risc0-zkvm-elf/release/ed25519-guest-input")
-if not test_elf_path.exists():
-    print("❌ Test ELF not found. Please build the demo first.")
+# Build and load the test program
+test_guest_dir = Path("demo/ed25519_demo_guest")
+try:
+    print("1. Building and loading legitimate program...")
+    elf_path = pyr0.build_guest(test_guest_dir, "ed25519-guest-input")
+    with open(elf_path, "rb") as f:
+        elf_data = f.read()
+except (pyr0.GuestBuildFailedError, pyr0.ElfNotFoundError) as e:
+    print(f"❌ Could not build test ELF: {e}")
     sys.exit(1)
-
-print("1. Loading legitimate program...")
-with open(test_elf_path, "rb") as f:
-    elf_data = f.read()
 
 image = pyr0.load_image(elf_data)
 trusted_image_id = image.id  # This is our trusted image ID

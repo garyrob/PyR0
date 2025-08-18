@@ -13,7 +13,6 @@ import merkle_py
 import secrets
 import hashlib
 from pathlib import Path
-import subprocess
 import json
 import time
 from borsh_construct import CStruct, U8
@@ -109,36 +108,33 @@ def run_zkp_proof(selected_user, merkle_siblings, merkle_bits, tree_root):
         
         # Build guest program if needed
         GUEST_DIR = Path(__file__).parent / "merkle_proof_guest"
-        ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "merkle-proof-guest"
         
-        if not ELF_PATH.exists():
+        try:
             print("\nBuilding RISC Zero guest program...")
             print("  (This may take a minute on first run)")
             
-            # Build using the same approach as risc0_ed25519_demo.py
-            result = subprocess.run([
-                "cargo", "+risc0", "build", "--release",
-                "--target", "riscv32im-risc0-zkvm-elf"
-            ], cwd=GUEST_DIR, capture_output=True, text=True)
+            # Use the new build_guest API
+            elf_path = pyr0.build_guest(GUEST_DIR, "merkle-proof-guest")
+            print(f"✓ Guest program built successfully: {elf_path.name}")
             
-            if result.returncode != 0:
-                print("✗ Failed to build guest program")
-                print(f"  Error: {result.stderr[:300] if result.stderr else 'Unknown error'}...")
-                print("\n  If you see 'no such subcommand: `+risc0`', install the RISC Zero toolchain:")
-                print("  cargo install cargo-risczero && cargo risczero install")
-                return None
+            # Load the guest program
+            with open(elf_path, "rb") as f:
+                elf_data = f.read()
+            image = pyr0.load_image(elf_data)  # Use new consistent name
             
-            if not ELF_PATH.exists():
-                print("✗ Build succeeded but ELF not found at expected location")
-                print(f"  Expected: {ELF_PATH}")
-                return None
-            
-            print(f"✓ Guest program built successfully: {ELF_PATH.name}")
-        
-        # Load the guest program
-        with open(ELF_PATH, "rb") as f:
-            elf_data = f.read()
-        image = pyr0.load_image(elf_data)  # Use new consistent name
+        except pyr0.GuestBuildFailedError as e:
+            print("✗ Failed to build guest program")
+            print(f"  Error: {e}")
+            print("\n  If you see 'no such subcommand: `+risc0`', install the RISC Zero toolchain:")
+            print("  cargo install cargo-risczero && cargo risczero install")
+            return None
+        except pyr0.ElfNotFoundError as e:
+            print("✗ Build succeeded but ELF not found")
+            print(f"  Error: {e}")
+            return None
+        except Exception as e:
+            print(f"✗ Unexpected error: {e}")
+            return None
         
         print(f"\nProver's private inputs:")
         print(f"  k_pub: 0x{selected_user['k_pub'].hex()[:16]}...")

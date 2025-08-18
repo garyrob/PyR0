@@ -10,7 +10,6 @@ Test the Receipt API improvements:
 
 import sys
 import os
-import subprocess
 from pathlib import Path
 
 def test_receipt_api():
@@ -26,21 +25,16 @@ def test_receipt_api():
         
         # Build test guest if needed
         GUEST_DIR = Path(__file__).parent / "demo" / "ed25519_demo_guest"
-        ELF_PATH = GUEST_DIR / "target" / "riscv32im-risc0-zkvm-elf" / "release" / "ed25519-guest-input"
         
-        if not ELF_PATH.exists():
+        try:
             print("\nBuilding test guest program...")
-            result = subprocess.run([
-                "cargo", "+risc0", "build", "--release",
-                "--target", "riscv32im-risc0-zkvm-elf"
-            ], cwd=GUEST_DIR, capture_output=True)
+            elf_path = pyr0.build_guest(GUEST_DIR, "ed25519-guest-input")
             
-            if result.returncode != 0:
-                print(f"✗ Failed to build guest: {result.stderr.decode()[:200]}")
-                return False
-        
-        with open(ELF_PATH, "rb") as f:
-            elf_data = f.read()
+            with open(elf_path, "rb") as f:
+                elf_data = f.read()
+        except (pyr0.GuestBuildFailedError, pyr0.ElfNotFoundError) as e:
+            print(f"✗ Failed to build guest: {e}")
+            return False
         
         image = pyr0.load_image(elf_data)
         trusted_image_id = image.id.hex()

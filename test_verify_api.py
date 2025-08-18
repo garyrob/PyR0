@@ -21,9 +21,10 @@ print(f"Signature: {inspect.signature(pyr0._rust.Receipt.verify)}")
 # Try to use it
 from pathlib import Path
 
-test_elf_path = Path("demo/ed25519_demo_guest/target/riscv32im-risc0-zkvm-elf/release/ed25519-guest-input")
-if test_elf_path.exists():
-    with open(test_elf_path, "rb") as f:
+test_guest_dir = Path("demo/ed25519_demo_guest")
+try:
+    elf_path = pyr0.build_guest(test_guest_dir, "ed25519-guest-input")
+    with open(elf_path, "rb") as f:
         elf_data = f.read()
     
     image = pyr0.load_image(elf_data)
@@ -57,8 +58,8 @@ if test_elf_path.exists():
         print(f"  ✗ verify(image_id) failed: {e}")
         if api_updated:
             test_passed = False  # New API should work
-else:
-    print("✗ Test ELF not found")
+except (pyr0.GuestBuildFailedError, pyr0.ElfNotFoundError) as e:
+    print(f"✗ Could not build test ELF: {e}")
     test_passed = False
 
 # Exit with appropriate code

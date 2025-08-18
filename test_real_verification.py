@@ -33,11 +33,12 @@ except Exception as e:
         # Create a minimal valid RISC-V ELF (just exits)
         from pathlib import Path
         
-        # Check if we have a test ELF available
-        test_elf_path = Path("demo/ed25519_demo_guest/target/riscv32im-risc0-zkvm-elf/release/ed25519-guest-input")
-        if test_elf_path.exists():
-            print(f"   Found test ELF: {test_elf_path}")
-            with open(test_elf_path, "rb") as f:
+        # Build test ELF if needed
+        test_guest_dir = Path("demo/ed25519_demo_guest")
+        try:
+            elf_path = pyr0.build_guest(test_guest_dir, "ed25519-guest-input")
+            print(f"   Found test ELF: {elf_path}")
+            with open(elf_path, "rb") as f:
                 elf_data = f.read()
             
             start_load = time.time()
@@ -70,8 +71,8 @@ except Exception as e:
             receipt.verify(image.id)  # Pass the trusted image ID
             verify_time = time.time() - start_verify
             print(f"   ✓ Receipt verified successfully in {verify_time:.3f}s")
-        else:
-            print("   ✗ No test ELF available - cannot complete test")
+        except (pyr0.GuestBuildFailedError, pyr0.ElfNotFoundError) as e:
+            print(f"   ✗ Could not build test ELF: {e}")
             test_passed = False
             
     except Exception as e:

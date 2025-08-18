@@ -1,11 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.4.0-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0-orange)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental alpha release (v0.4.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **Note**: This is an experimental alpha release (v0.5.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
@@ -96,7 +96,8 @@ env::commit_slice(&borsh::to_vec(&output).unwrap());
 - Apple Silicon Mac (M1, M2, or M3)
 - macOS 11.0 or later
 - Python 3.8.3+
-- Rust toolchain
+- Rust toolchain with cargo
+- RISC Zero toolchain (`cargo risczero` installed via `cargo install cargo-risczero`)
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ### Building from Source
@@ -115,6 +116,32 @@ For development with editable installs, see [CLAUDE.md](CLAUDE.md) for important
 
 ## Features
 
+### Building Guest Programs
+
+PyR0 can build RISC Zero guest programs directly:
+
+```python
+import pyr0
+
+# Build a guest program (always rebuilds to ensure up-to-date)
+elf_path = pyr0.build_guest("path/to/guest", "binary-name")
+
+# Auto-detect binary name from Cargo.toml
+elf_path = pyr0.build_guest("path/to/guest")
+
+# Build in debug mode (faster compile, slower execution)
+elf_path = pyr0.build_guest("path/to/guest", release=False)
+```
+
+The `build_guest` function:
+- Always rebuilds to ensure the ELF is up-to-date
+- Handles both standard (embed_methods) and direct build structures
+- Automatically detects the correct build method
+- Returns the path to the built ELF file
+- Raises `GuestBuildFailedError` if compilation fails
+- Raises `InvalidGuestDirectoryError` if the directory is invalid
+- Raises `ElfNotFoundError` if the ELF isn't found after building
+
 ### Core RISC Zero Operations
 
 Execute guest programs and generate proofs:
@@ -122,7 +149,13 @@ Execute guest programs and generate proofs:
 ```python
 import pyr0
 
-# Load a RISC Zero guest program
+# Option 1: Build and load a guest program
+elf_path = pyr0.build_guest("path/to/guest", "binary-name")
+with open(elf_path, "rb") as f:
+    elf_data = f.read()
+image = pyr0.load_image(elf_data)
+
+# Option 2: Load a pre-built ELF
 with open("guest_program.elf", "rb") as f:
     elf_data = f.read()
 image = pyr0.load_image(elf_data)
