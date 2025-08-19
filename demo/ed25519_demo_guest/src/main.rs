@@ -2,22 +2,16 @@ use risc0_zkvm::guest::env;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
 fn main() {
-    // Start with a debug marker
-    env::commit(&99u8);
-    
     // Read input from host - env::read() will panic if deserialization fails
     let public_key_vec: Vec<u8> = env::read();
     let signature_vec: Vec<u8> = env::read();
     let message: Vec<u8> = env::read();
     
-    // Debug: commit sizes
-    env::commit(&(public_key_vec.len() as u8));
-    env::commit(&(signature_vec.len() as u8));
-    env::commit(&(message.len() as u8));
-    
-    // Check sizes before proceeding
+    // Validate input sizes
     if public_key_vec.len() != 32 || signature_vec.len() != 64 {
-        env::commit(&200u8); // Error marker
+        // Commit error status and reason
+        env::commit(&0u8);  // 0 = invalid
+        env::commit(&1u8);  // reason: 1 = size error
         return;
     }
     
@@ -32,8 +26,9 @@ fn main() {
     let verifying_key = match VerifyingKey::from_bytes(&public_key_bytes) {
         Ok(key) => key,
         Err(_) => {
-            env::commit(&201u8); // Invalid key marker
-            env::commit(&0u8);
+            // Commit error status and reason
+            env::commit(&0u8);  // 0 = invalid
+            env::commit(&2u8);  // reason: 2 = invalid public key
             return;
         }
     };
@@ -44,11 +39,12 @@ fn main() {
     // Verify signature
     let result = verifying_key.verify(&message, &signature);
     
-    // Commit result: 1 if valid, 0 if invalid
+    // Commit result
     if result.is_ok() {
-        env::commit(&1u8);
-        env::commit(&public_key_bytes.to_vec());
+        env::commit(&1u8);  // 1 = valid signature
+        env::commit(&public_key_bytes.to_vec());  // Include public key in journal
     } else {
-        env::commit(&0u8);
+        env::commit(&0u8);  // 0 = invalid signature
+        env::commit(&3u8);  // reason: 3 = signature verification failed
     }
 }

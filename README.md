@@ -1,11 +1,11 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.5.1-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.6.0-orange)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental alpha release (v0.5.1) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **Note**: This is an experimental alpha release (v0.6.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 
 ## Overview
 
@@ -174,6 +174,73 @@ receipt.verify()
 image_id = image.id
 ```
 
+### Proof Composition
+
+PyR0 supports proof composition, allowing one RISC Zero guest to verify proofs from another. This enables building multi-tier proof systems where an outer proof verifies one or more inner proofs.
+
+#### Python Side: Preparing Receipts for Composition
+
+```python
+# Generate inner proof
+inner_receipt = pyr0.prove(inner_image, inner_input)
+
+# Extract receipt for guest verification
+receipt_bytes = inner_receipt.to_inner_bytes()
+
+# Safety check: verify it's from expected program
+if not inner_receipt.verify_image_id(expected_inner_image_id):
+    raise ValueError("Inner receipt is from wrong program!")
+
+# Use the composition helper to package everything
+outer_input = pyr0.serialization.composition_input(
+    receipt_bytes,                # The inner proof to verify
+    trusted_inner_image_id,       # Expected image ID (32 bytes)
+    additional_data_1,            # Any additional data for outer program
+    additional_data_2             # More data as needed
+)
+
+# Generate outer proof that verifies the inner proof
+outer_receipt = pyr0.prove(outer_image, outer_input)
+```
+
+#### Rust Side: Verifying Receipts in Guest
+
+The `composition_input()` helper packages data so the guest can read it piece by piece:
+
+```rust
+use risc0_zkvm::guest::env;
+
+fn main() {
+    // Read what composition_input() packaged (in the same order)
+    let receipt_bytes: Vec<u8> = env::read();        // The inner receipt
+    let expected_image_id: Vec<u8> = env::read();    // Image ID to verify against
+    let additional_data_1: Vec<u8> = env::read();    // First additional data
+    let additional_data_2: Vec<u8> = env::read();    // Second additional data
+    
+    // Verify the inner proof using RISC Zero's built-in function
+    env::verify(&expected_image_id, &receipt_bytes).unwrap();
+    
+    // Optional: Extract the journal from the verified receipt
+    use bincode;
+    let receipt: Receipt = bincode::deserialize(&receipt_bytes).unwrap();
+    let inner_journal = receipt.journal.bytes;
+    
+    // Use the verified journal data
+    let credential_hash = &inner_journal[0..32];
+    let timestamp = u64::from_le_bytes(inner_journal[32..40].try_into().unwrap());
+    
+    // Continue with your logic using verified data + additional inputs
+    // ...
+}
+```
+
+#### Key Points
+
+- **`composition_input()`** uses `to_vec_u8()` internally for each argument
+- Each `to_vec_u8()` call on Python side corresponds to one `env::read()` on Rust side
+- The receipt bytes are compatible with RISC Zero's `env::verify()`
+- No special Rust-side decoder needed - uses standard RISC Zero functions
+
 ### Merkle Trees with Poseidon Hash
 
 Build sparse Merkle trees compatible with zero-knowledge circuits:
@@ -313,6 +380,231 @@ OutputSchema = CStruct(
 journal = receipt.journal  # Access as property
 output = OutputSchema.parse(journal)
 ```
+
+## Proof Composition - Complete Guide
+
+PyR0 enables proof composition using RISC Zero's assumption-based recursion model. This powerful feature allows one zkVM guest to verify proofs from another guest, enabling complex multi-step computations with a single final verification.
+
+### Understanding Proof Composition
+
+Proof composition solves a fundamental challenge: how can we break complex computations into smaller, manageable pieces while maintaining cryptographic guarantees? 
+
+The traditional approach would require verifying each proof separately, which is expensive. PyR0's composition model uses "lazy verification" - the outer proof doesn't directly verify the inner proof but adds it as an assumption that gets verified when the final proof is generated.
+
+#### The Three-Part Architecture
+
+1. **Inner Guest**: Performs the initial computation and generates a proof
+2. **Outer Guest**: Verifies the inner proof's journal matches expectations and performs additional computation
+3. **Final Proof**: A single proof that cryptographically guarantees both computations are valid
+
+The key insight: when you verify the outer receipt, RISC Zero automatically ensures all assumptions (inner proofs) were valid. You get the security of multiple proofs with a single verification.
+
+### Complete Working Example
+
+#### Step 1: Set Up Your Inner Guest
+
+Create `inner_guest/src/main.rs`:
+```rust
+use risc0_zkvm::guest::env;
+
+fn main() {
+    // Read two numbers from the host
+    let a: u32 = env::read();
+    let b: u32 = env::read();
+    
+    // Perform computation
+    let sum = a + b;
+    
+    // Commit result to journal (public output)
+    env::commit(&sum);
+}
+```
+
+#### Step 2: Set Up Your Outer Guest
+
+Create `outer_guest/src/main.rs`:
+```rust
+use risc0_zkvm::guest::env;
+
+fn main() {
+    // Read expected values from host using read_slice for raw bytes
+    let mut sum_bytes = [0u8; 4];
+    env::read_slice(&mut sum_bytes);
+    let expected_sum = u32::from_le_bytes(sum_bytes);
+    
+    // Read the inner guest's image ID (32 bytes)
+    let mut inner_image_id = [0u8; 32];
+    env::read_slice(&mut inner_image_id);
+    
+    // Verify the inner proof (assumption)
+    // IMPORTANT: This doesn't verify immediately - it becomes an assumption
+    // that will be checked when the outer proof is generated
+    let expected_journal = risc0_zkvm::serde::to_vec(&expected_sum).unwrap();
+    env::verify(inner_image_id, &expected_journal).unwrap();
+    
+    // Now we can trust expected_sum came from the verified inner proof
+    // Perform additional computation
+    let result = expected_sum * 2;
+    
+    // Commit our result
+    env::commit(&result);
+}
+```
+
+#### Step 3: Python Host Code
+
+```python
+import pyr0
+import struct
+
+# 1. Build and load both guest programs
+inner_elf = pyr0.build_guest("inner_guest")
+outer_elf = pyr0.build_guest("outer_guest")
+inner_image = pyr0.load_image(inner_elf)
+outer_image = pyr0.load_image(outer_elf)
+
+# Save image IDs for verification
+inner_image_id = inner_image.image_id_bytes
+outer_image_id = pyr0.compute_image_id_hex(outer_elf)
+
+# 2. Generate the inner proof
+# Prepare input: two u32 values
+a, b = 3, 5
+inner_input = pyr0.serialization.to_u32(a) + pyr0.serialization.to_u32(b)
+inner_receipt = pyr0.prove(inner_image, inner_input)
+
+# 3. Extract the sum from inner proof's journal
+# The journal contains the raw bytes of what was committed
+journal_bytes = inner_receipt.journal_bytes
+sum_value = struct.unpack('<I', journal_bytes[:4])[0]  # Little-endian u32
+print(f"Inner proof computed: {a} + {b} = {sum_value}")
+
+# 4. Create ExecutorEnv with the inner proof as an assumption
+env = pyr0.ExecutorEnv()
+env.add_assumption(inner_receipt)  # KEY STEP: Add the inner proof
+
+# 5. Provide input data for the outer guest
+# IMPORTANT: Use raw bytes, not serialization helpers
+env.write(struct.pack('<I', sum_value))  # Expected sum as 4 bytes
+env.write(inner_image_id)                # Inner image ID as 32 bytes
+
+# 6. Generate the composed proof
+outer_receipt = pyr0.prove_with_env(outer_image, env)
+
+# 7. Extract and verify the final result
+outer_journal = outer_receipt.journal_bytes
+final_result = struct.unpack('<I', outer_journal[:4])[0]
+print(f"Outer proof computed: {sum_value} * 2 = {final_result}")
+
+# 8. Verify the composed proof
+# This single verification ensures BOTH computations are valid!
+outer_receipt.verify_hex(outer_image_id)
+print("✓ Composed proof verified - both computations are cryptographically proven!")
+```
+
+### Critical Implementation Details
+
+#### ExecutorEnv and Raw Bytes
+
+The `ExecutorEnv` class is the bridge between proofs:
+- Use `env.add_assumption(receipt)` to add proofs that need verification
+- Use `env.write(bytes)` to provide raw input data
+- In the guest, use `env::read_slice()` for raw bytes, not `env::read()`
+
+#### Journal Data Extraction
+
+When extracting data from journals:
+```python
+# For a u32 value committed in the guest
+journal_bytes = receipt.journal_bytes
+value = struct.unpack('<I', journal_bytes[:4])[0]  # Little-endian
+
+# For multiple values, track offsets
+first_u32 = struct.unpack('<I', journal_bytes[0:4])[0]
+second_u32 = struct.unpack('<I', journal_bytes[4:8])[0]
+```
+
+#### Image ID Verification
+
+The outer guest must verify the inner proof came from the expected program:
+```rust
+// In the outer guest
+env::verify(inner_image_id, &expected_journal).unwrap();
+```
+
+This ensures you're not accepting proofs from arbitrary programs.
+
+### Advanced Patterns
+
+#### Multiple Assumptions
+
+You can compose multiple proofs:
+```python
+env = pyr0.ExecutorEnv()
+env.add_assumption(proof1)
+env.add_assumption(proof2)
+env.add_assumption(proof3)
+# All three proofs will be verified with the final proof
+```
+
+#### Conditional Composition
+
+The outer guest can make decisions based on inner proof data:
+```rust
+// In outer guest
+if expected_sum > 100 {
+    // One computation path
+} else {
+    // Another computation path
+}
+```
+
+#### Recursive Composition
+
+You can chain compositions:
+```python
+# First composition
+env1 = pyr0.ExecutorEnv()
+env1.add_assumption(inner_receipt)
+middle_receipt = pyr0.prove_with_env(middle_image, env1)
+
+# Second composition
+env2 = pyr0.ExecutorEnv()
+env2.add_assumption(middle_receipt)
+outer_receipt = pyr0.prove_with_env(outer_image, env2)
+```
+
+### Use Cases
+
+1. **Multi-step Computations**: Break complex algorithms into verifiable steps
+2. **Privacy-Preserving Pipelines**: Different parties prove different parts without revealing internals
+3. **Modular Verification**: Build libraries of verified components
+4. **Delegation**: Prove you correctly processed someone else's proven computation
+5. **Aggregation**: Combine multiple proofs into a single verifiable result
+
+### Performance Considerations
+
+- **Assumption Cost**: Each assumption adds ~200-500ms to proof generation
+- **Memory**: Composed proofs are larger (~2x) than simple proofs
+- **Optimization**: Minimize data passed between guests
+- **Batching**: Group related computations in single guests when possible
+
+### Security Notes
+
+1. **Always Verify Image IDs**: Never trust journal data without verifying its source
+2. **Check Exit Status**: Ensure inner proofs completed successfully
+3. **Validate Journals**: Confirm journal format matches expectations
+4. **Test Assumptions**: Invalid assumptions will cause proof generation to fail
+
+### Troubleshooting
+
+**"No receipt found to resolve assumption"**: The inner receipt wasn't properly added or is invalid
+
+**"Guest panicked during env::verify"**: The journal data doesn't match what env::verify expects
+
+**"Invalid image ID"**: The image ID bytes are incorrect length (must be exactly 32 bytes)
+
+**Performance issues**: Consider reducing the number of composed proofs or optimizing guest code
 
 ## Examples
 

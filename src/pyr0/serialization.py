@@ -315,3 +315,5 @@ def merkle_commitment_input(k_pub: bytes, r: bytes, e: bytes,
         result += bytes([1 if bit else 0])
     
     return result
+
+

@@ -13,6 +13,7 @@ __all__ = [
     "load_image",
     "prove",
     "prove_with_opts",
+    "prove_with_env",
     "compute_image_id_hex",
     
     # Build functions
@@ -29,6 +30,7 @@ __all__ = [
     "SessionInfo",
     "ExitStatus",
     "ExitKind",
+    "ExecutorEnv",
     
     # Exceptions
     "BuildError",

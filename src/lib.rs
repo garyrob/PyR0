@@ -1,10 +1,12 @@
 mod image;
 mod receipt;
 mod session;
+mod executor_env;
 
 use crate::image::Image;
 use crate::receipt::{Receipt, ExitStatus, ExitKind};
 use crate::session::{ExitCode, SessionInfo};
+use crate::executor_env::PyExecutorEnv;
 use pyo3::prelude::*;
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
 
@@ -84,6 +86,28 @@ fn prove_with_opts(_py: Python<'_>, image: &Image, input_bytes: &Bound<'_, PyAny
     Ok(Receipt::from_risc0(receipt))
 }
 
+/// Execute and prove with a custom ExecutorEnv (for composition)
+/// 
+/// This allows proof composition by adding assumptions.
+/// 
+/// Args:
+///     image: The Image containing the RISC-V ELF
+///     env: ExecutorEnv with assumptions and input data
+/// 
+/// Returns:
+///     Receipt proving execution with all assumptions
+#[pyfunction]
+fn prove_with_env(_py: Python<'_>, image: &Image, env: &PyExecutorEnv) -> PyResult<Receipt> {
+    let executor_env = env.build_env()?;
+    
+    // Use default prover with the custom environment
+    let receipt = default_prover()
+        .prove(executor_env, image.get_elf())?
+        .receipt;
+    
+    Ok(Receipt::from_risc0(receipt))
+}
+
 // Advanced functions removed - segments are no longer exposed
 // If needed in future, these could work with Receipt types instead
 
@@ -114,11 +138,13 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Receipt>()?;
     m.add_class::<ExitStatus>()?;
     m.add_class::<ExitKind>()?;
+    m.add_class::<PyExecutorEnv>()?;
     
     // Core API functions
     m.add_function(wrap_pyfunction!(load_image, m)?)?;
     m.add_function(wrap_pyfunction!(prove, m)?)?;
     m.add_function(wrap_pyfunction!(prove_with_opts, m)?)?;
+    m.add_function(wrap_pyfunction!(prove_with_env, m)?)?;
     m.add_function(wrap_pyfunction!(compute_image_id_hex, m)?)?;
     
     // Optional debugging function

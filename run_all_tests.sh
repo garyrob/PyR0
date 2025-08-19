@@ -46,6 +46,10 @@ echo -e "\n=== API Tests ==="
 run_test "Build Guest Test" "uv run test_build_guest.py"
 run_test "Receipt API Test" "uv run test_receipt_api.py"
 
+# Composition tests
+echo -e "\n=== Composition Tests ==="
+run_test "Proof Composition Test" "uv run test_composition.py"
+
 # Merkle tree tests
 echo -e "\n=== Merkle Tree Tests ==="
 run_test "Merkle ZKP Test" "uv run test/test_merkle_zkp.py"

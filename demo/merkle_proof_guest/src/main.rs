@@ -133,18 +133,3 @@ fn main() {
     env::commit_slice(&bytes);
 }
 
-// Alternative version that uses Poseidon hash (placeholder for now)
-// In production, we'd import a Poseidon implementation optimized for zkVM
-#[allow(dead_code)]
-fn poseidon_hash(_inputs: &[[u8; 32]]) -> [u8; 32] {
-    // Placeholder - would use actual Poseidon implementation
-    // For now, using SHA256 as fallback
-    let mut hasher = Sha256::new();
-    for input in _inputs {
-        hasher.update(input);
-    }
-    let result = hasher.finalize();
-    let mut output = [0u8; 32];
-    output.copy_from_slice(&result);
-    output
-}

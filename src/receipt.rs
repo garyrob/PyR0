@@ -10,7 +10,7 @@ use risc0_zkvm::sha::{Digest, Digestible};
 
 
 /// Exit kind enumeration for Python
-#[pyclass(module = "pyr0")]
+#[pyclass(module = "pyr0", eq, eq_int)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExitKind {
     #[pyo3(name = "HALTED")]
@@ -55,7 +55,7 @@ impl ExitStatus {
 #[pyclass(module = "pyr0")]
 #[derive(Clone)]
 pub struct Receipt {
-    pub(crate) inner: RiscZeroReceipt,
+    pub inner: RiscZeroReceipt,
 }
 
 impl Receipt {
@@ -316,5 +316,70 @@ impl Receipt {
             self.inner.journal.bytes.len(),
             journal_preview
         )
+    }
+    
+    /// Export receipt as bytes for verification in a guest program (composition)
+    /// 
+    /// This serializes the receipt in a format that can be passed to another
+    /// RISC Zero guest program and verified using env::verify().
+    /// 
+    /// Returns:
+    ///     bytes: The serialized receipt
+    /// 
+    /// Example:
+    ///     ```python
+    ///     # Host: prepare inner proof for outer guest
+    ///     inner_receipt = pyr0.prove(inner_image, inner_input)
+    ///     receipt_bytes = inner_receipt.to_inner_bytes()
+    ///     
+    ///     # Package with other inputs for outer program
+    ///     outer_input = (
+    ///         pyr0.serialization.to_vec_u8(receipt_bytes) +
+    ///         pyr0.serialization.to_vec_u8(trusted_image_id)
+    ///     )
+    ///     ```
+    pub fn to_inner_bytes(&self) -> PyResult<Vec<u8>> {
+        bincode::serialize(&self.inner)
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(
+                format!("Failed to serialize receipt: {}", e)
+            ))
+    }
+    
+    /// Check if this receipt was created by a specific image/program
+    /// 
+    /// This is a safety check to verify the receipt came from the expected
+    /// program before using it in composition.
+    /// 
+    /// Args:
+    ///     expected_image_id: The image ID to check against (32 bytes)
+    /// 
+    /// Returns:
+    ///     bool: True if the receipt's claimed image ID matches
+    /// 
+    /// Example:
+    ///     ```python
+    ///     expected_id = bytes.fromhex("abc123...")
+    ///     if not receipt.verify_image_id(expected_id):
+    ///         raise ValueError("Receipt is from wrong program!")
+    ///     ```
+    pub fn verify_image_id(&self, expected_image_id: Vec<u8>) -> PyResult<bool> {
+        if expected_image_id.len() != 32 {
+            return Err(PyErr::new::<PyValueError, _>(
+                format!("Image ID must be 32 bytes, got {} bytes", expected_image_id.len())
+            ));
+        }
+        
+        // Get the claimed image ID from the receipt
+        let claimed_id = self.inner.claim()
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(
+                format!("Failed to get claim: {}", e)
+            ))?
+            .as_value()
+            .map_err(|_| PyErr::new::<PyRuntimeError, _>("Claim is pruned"))?
+            .pre
+            .digest();
+        
+        // Compare as bytes
+        Ok(claimed_id.as_bytes() == expected_image_id.as_slice())
     }
 }
