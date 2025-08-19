@@ -2,12 +2,12 @@
 use risc0_zkvm::guest::env;
 
 fn main() {
-    // Read the expected sum from the inner proof (4 bytes)
+    // Read the expected sum from the Composer's write_u32 (4 bytes)
     let mut sum_bytes = [0u8; 4];
     env::read_slice(&mut sum_bytes);
     let expected_sum = u32::from_le_bytes(sum_bytes);
     
-    // Read the image ID of the inner guest (32 bytes)
+    // Read the image ID from the Composer's write_image_id (32 bytes)
     let mut inner_image_id = [0u8; 32];
     env::read_slice(&mut inner_image_id);
     

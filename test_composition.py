@@ -116,9 +116,9 @@ fn main() {
     # Build and return path
     return pyr0.build_guest(outer_dir, release=True)
 
-def test_composition_with_assumptions():
-    """Test composition using ExecutorEnv with assumptions."""
-    print("Testing RISC Zero Proof Composition with Assumptions")
+def test_composition_with_composer():
+    """Test composition using the Composer API."""
+    print("Testing RISC Zero Proof Composition with Composer")
     print("=" * 60)
     
     test_passed = True
@@ -144,11 +144,11 @@ def test_composition_with_assumptions():
         print(f"Inner image ID: {inner_image_id_hex[:16]}...")
         print(f"Outer image ID: {pyr0.compute_image_id_hex(outer_elf)[:16]}...")
         
-        # Create inner proof
+        # Create inner proof (must be succinct for composition)
         print("\n3. Creating inner proof (3 + 5 = 8)...")
         a, b = 3, 5
         inner_input = pyr0.serialization.to_u32(a) + pyr0.serialization.to_u32(b)
-        inner_receipt = pyr0.prove(inner_image, inner_input)
+        inner_receipt = pyr0.prove_succinct(inner_image, inner_input)
         
         # Extract the sum from the journal
         import struct
@@ -157,20 +157,26 @@ def test_composition_with_assumptions():
         sum_value = struct.unpack('<I', journal_bytes[:4])[0]
         print(f"Inner proof created: sum = {sum_value}")
         print(f"Inner proof size: {inner_receipt.seal_size} bytes")
+        print(f"Inner proof kind: {inner_receipt.kind}")
+        print(f"Is unconditional: {inner_receipt.is_unconditional}")
         
         # Create outer proof with assumption
         print("\n4. Creating outer proof with assumption...")
         
-        # Create ExecutorEnv with the inner receipt as an assumption
-        env = pyr0.ExecutorEnv()
-        env.add_assumption(inner_receipt)
+        # Create Composer with the inner receipt as an assumption
+        comp = pyr0.Composer(outer_image)
+        comp.assume(inner_receipt)
         
-        # Write inputs for the outer guest
-        env.write(pyr0.serialization.to_u32(sum_value))  # Expected sum
-        env.write(inner_image_id_bytes)  # Inner image ID as [u8; 32]
+        # Tell the Composer what env::verify() calls to expect
+        # The outer guest will verify the inner proof with the expected journal
+        comp.expect_verification(inner_image_id_bytes, journal_bytes)
         
-        # Prove with the assumption
-        outer_receipt = pyr0.prove_with_env(outer_image, env)
+        # Write inputs for the outer guest using typed writers
+        comp.write_u32(sum_value)  # Expected sum (4 bytes)
+        comp.write_image_id(inner_image_id_bytes)  # Inner image ID (32 bytes)
+        
+        # Prove with the assumption (defaults to succinct to resolve assumptions)
+        outer_receipt = comp.prove()
         
         # Extract result from outer journal
         outer_journal = outer_receipt.journal_bytes
@@ -180,31 +186,38 @@ def test_composition_with_assumptions():
         
         # Verify the outer proof
         print("\n5. Verifying composition...")
-        outer_image_id = pyr0.compute_image_id_hex(outer_elf)
         try:
-            outer_receipt.verify_hex(outer_image_id)
+            # Use the unified verify method with the image
+            outer_receipt.verify(outer_image)
             print("✅ Composition verified successfully!")
             print("   The outer proof proves:")
             print(f"   - The inner proof is valid (3 + 5 = 8)")
             print(f"   - The outer computation is correct (8 * 2 = 16)")
-        except Exception as e:
+            print(f"   - Proof kind: {outer_receipt.kind}")
+            print(f"   - All assumptions resolved: {outer_receipt.assumption_count == 0}")
+        except pyr0.VerificationError as e:
             print(f"❌ Verification failed: {e}")
+            test_passed = False
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
             test_passed = False
         
         # Test invalid assumption
         print("\n6. Testing invalid assumption (should fail)...")
         try:
             # Try to create outer proof with wrong expected sum
-            env_bad = pyr0.ExecutorEnv()
-            env_bad.add_assumption(inner_receipt)
-            env_bad.write(pyr0.serialization.to_u32(999))  # Wrong sum!
-            env_bad.write(inner_image_id_bytes)
+            comp_bad = pyr0.Composer(outer_image)
+            comp_bad.assume(inner_receipt)
+            comp_bad.write_u32(999)  # Wrong sum!
+            comp_bad.write_image_id(inner_image_id_bytes)
             
-            outer_receipt_bad = pyr0.prove_with_env(outer_image, env_bad)
+            outer_receipt_bad = comp_bad.prove()
             print("❌ Should have failed with wrong assumption!")
             test_passed = False
-        except Exception as e:
+        except (pyr0.CompositionError, pyr0.PreflightError) as e:
             print(f"✅ Correctly rejected invalid assumption: {str(e)[:100]}...")
+        except Exception as e:
+            print(f"✅ Rejected with: {type(e).__name__}: {str(e)[:100]}...")
         
         return test_passed
         
@@ -222,11 +235,11 @@ def main():
     print("" + " " * 8 + "RISC ZERO PROOF COMPOSITION TEST" + " " * 19)
     print("=" * 60)
     
-    test_passed = test_composition_with_assumptions()
+    test_passed = test_composition_with_composer()
     
     if test_passed:
         print("\n" + "=" * 60)
-        print("SUCCESS: Composition with assumptions works correctly!")
+        print("SUCCESS: Composition with Composer API works correctly!")
         print("=" * 60)
         return 0
     else:

@@ -7,14 +7,23 @@ from pyr0.build import (
     ElfNotFoundError,
     InvalidGuestDirectoryError,
 )
+from pyr0.exceptions import (
+    PyR0Error,
+    CompositionError,
+    VerificationError,
+    SerializationError,
+    PreflightError,
+    AssumptionError,
+)
 
 __all__ = [
     # Core API functions
     "load_image",
     "prove",
     "prove_with_opts",
-    "prove_with_env",
+    "prove_succinct",
     "compute_image_id_hex",
+    "compress_to_succinct",
     
     # Build functions
     "build_guest",
@@ -30,11 +39,20 @@ __all__ = [
     "SessionInfo",
     "ExitStatus",
     "ExitKind",
-    "ExecutorEnv",
+    "ReceiptKind",
+    "Claim",
+    "Composer",
+    "VerifierContext",
     
     # Exceptions
     "BuildError",
     "GuestBuildFailedError", 
     "ElfNotFoundError",
     "InvalidGuestDirectoryError",
+    "PyR0Error",
+    "CompositionError",
+    "VerificationError",
+    "SerializationError",
+    "PreflightError",
+    "AssumptionError",
 ]

@@ -37,29 +37,41 @@ try:
     print("Generating proof...")
     receipt = pyr0.prove(image, input_data)
     
-    print("\nTrying verify() without image_id (should fail if API is updated)...")
-    api_updated = False
+    print("\nTrying verify() without image_id (should fail)...")
     try:
         receipt.verify()
-        print("  ✗ verify() worked without image_id - OLD API still in use")
-        test_passed = False  # This is a problem - the secure API should be in use
+        print("  ❌ verify() worked without image_id - SECURITY ISSUE!")
+        test_passed = False
     except TypeError as e:
-        print(f"  ✓ verify() requires image_id - NEW API in use: {e}")
-        api_updated = True
+        print(f"  ✓ verify() requires image_id: {e}")
     
-    print("\nTrying verify(image_id)...")
+    print("\nTrying polymorphic verify with different types...")
+    
+    # Test with bytes
     try:
         receipt.verify(image.id)
-        print("  ✓ verify(image_id) worked - NEW API")
-        if not api_updated:
-            print("  ✗ ERROR: Both old and new API work - unexpected state!")
-            test_passed = False
+        print("  ✓ verify(bytes) worked")
     except Exception as e:
-        print(f"  ✗ verify(image_id) failed: {e}")
-        if api_updated:
-            test_passed = False  # New API should work
+        print(f"  ❌ verify(bytes) failed: {e}")
+        test_passed = False
+    
+    # Test with hex string
+    try:
+        receipt.verify(image.id_hex)
+        print("  ✓ verify(hex_string) worked")
+    except Exception as e:
+        print(f"  ❌ verify(hex_string) failed: {e}")
+        test_passed = False
+        
+    # Test with Image object
+    try:
+        receipt.verify(image)
+        print("  ✓ verify(Image) worked")
+    except Exception as e:
+        print(f"  ❌ verify(Image) failed: {e}")
+        test_passed = False
 except (pyr0.GuestBuildFailedError, pyr0.ElfNotFoundError) as e:
-    print(f"✗ Could not build test ELF: {e}")
+    print(f"❌ Could not build test ELF: {e}")
     test_passed = False
 
 # Exit with appropriate code
@@ -67,5 +79,5 @@ if test_passed:
     print("\n✓ API test passed")
     sys.exit(0)
 else:
-    print("\n✗ API test failed")
+    print("\n❌ API test failed")
     sys.exit(1)

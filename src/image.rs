@@ -48,9 +48,20 @@ impl Image {
     
     /// Return the zkVM ImageID as raw bytes (32 bytes)
     #[getter]
-    fn id(&self) -> PyResult<Vec<u8>> {
+    pub fn id(&self) -> PyResult<Vec<u8>> {
         match &self.image_id {
             Some(id) => Ok(id.as_bytes().to_vec()),
+            None => Err(PyErr::new::<pyo3::exceptions::PyAttributeError, _>(
+                "Image has no ID (not loaded from ELF)"
+            ))
+        }
+    }
+    
+    /// Return the zkVM ImageID as hex string (64 chars)
+    #[getter]
+    pub fn id_hex(&self) -> PyResult<String> {
+        match &self.image_id {
+            Some(id) => Ok(hex::encode(id.as_bytes())),
             None => Err(PyErr::new::<pyo3::exceptions::PyAttributeError, _>(
                 "Image has no ID (not loaded from ELF)"
             ))

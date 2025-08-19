@@ -609,7 +609,7 @@ wheels = [
 [[package]]
 name = "pyr0"
 version = "0.6.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "borsh-construct" },
     { name = "dask", version = "2023.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },

@@ -7,6 +7,21 @@ use risc0_zkvm::{
     ExitCode as RiscZeroExitCode,
 };
 use risc0_zkvm::sha::{Digest, Digestible};
+use crate::claim::Claim;
+
+/// Kind of receipt/proof
+#[pyclass(module = "pyr0", eq, eq_int)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ReceiptKind {
+    #[pyo3(name = "COMPOSITE")]
+    Composite,
+    #[pyo3(name = "SUCCINCT")]
+    Succinct,
+    #[pyo3(name = "GROTH16")]
+    Groth16,
+    #[pyo3(name = "FAKE")]
+    Fake,
+}
 
 
 /// Exit kind enumeration for Python
@@ -98,6 +113,24 @@ impl Receipt {
         self.journal_bytes()
     }
     
+    // ===== Claim (what this receipt proves) =====
+    
+    /// Get the claim that this receipt proves
+    /// 
+    /// A claim represents what was proven: an image ID executed with a specific journal.
+    /// This is the core abstraction for understanding proof composition.
+    pub fn claim(&self) -> PyResult<Claim> {
+        let claim_pruned = self.inner.claim()
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Failed to decode claim: {e}")))?;
+        
+        let claim = match claim_pruned.as_value() {
+            Ok(claim) => claim,
+            Err(_) => return Err(PyErr::new::<PyRuntimeError, _>("Claim is pruned")),
+        };
+        
+        Claim::from_risc0_claim(claim, self.inner.journal.bytes.clone())
+    }
+    
     // ===== Exit status =====
     
     /// Structured exit status information
@@ -130,8 +163,14 @@ impl Receipt {
     
     // ===== Image ID (claimed, not trusted) =====
     
-    /// The CLAIMED image ID from the receipt (for inspection/debugging only)
-    /// SECURITY: This is untrusted data! Use verify_hex/verify_bytes with a trusted ID
+    /// The CLAIMED image ID from the receipt (**UNTRUSTED / DEBUG ONLY**)
+    /// 
+    /// **⚠️ SECURITY WARNING**: This is untrusted data from the receipt itself!
+    /// Anyone can create a receipt claiming any image ID. 
+    /// **NEVER** use this for security decisions.
+    /// **ALWAYS** use verify_hex/verify_bytes with a trusted ID instead.
+    /// 
+    /// This property is only for debugging and logging purposes.
     #[getter]
     pub fn claimed_image_id_hex(&self) -> PyResult<String> {
         let claim_pruned = self.inner.claim()
@@ -149,8 +188,14 @@ impl Receipt {
         Ok(hex::encode(digest.as_bytes()))
     }
     
-    /// The CLAIMED image ID as bytes (for inspection/debugging only)
-    /// SECURITY: This is untrusted data! Use verify_hex/verify_bytes with a trusted ID
+    /// The CLAIMED image ID as bytes (**UNTRUSTED / DEBUG ONLY**)
+    /// 
+    /// **⚠️ SECURITY WARNING**: This is untrusted data from the receipt itself!
+    /// Anyone can create a receipt claiming any image ID.
+    /// **NEVER** use this for security decisions.
+    /// **ALWAYS** use verify_hex/verify_bytes with a trusted ID instead.
+    /// 
+    /// This property is only for debugging and logging purposes.
     #[getter]
     pub fn claimed_image_id_bytes(&self) -> PyResult<Vec<u8>> {
         let claim_pruned = self.inner.claim()
@@ -180,6 +225,69 @@ impl Receipt {
     #[getter]
     pub fn seal_size(&self) -> PyResult<usize> {
         Ok(self.inner.seal_size())
+    }
+    
+    /// Kind of proof (composite, succinct, groth16, etc.)
+    /// 
+    /// Returns an enum describing the proof type:
+    /// - COMPOSITE: Default proof type with assumptions
+    /// - SUCCINCT: Compressed proof using STARK-to-SNARK
+    /// - GROTH16: Final Groth16 proof for on-chain verification
+    /// - FAKE: Test-only fake proof (not secure!)
+    #[getter]
+    pub fn kind(&self) -> PyResult<ReceiptKind> {
+        use risc0_zkvm::InnerReceipt;
+        
+        Ok(match &self.inner.inner {
+            InnerReceipt::Composite(_) => ReceiptKind::Composite,
+            InnerReceipt::Succinct(_) => ReceiptKind::Succinct,
+            InnerReceipt::Groth16(_) => ReceiptKind::Groth16,
+            InnerReceipt::Fake(_) => ReceiptKind::Fake,
+            _ => ReceiptKind::Composite,  // Default for any future variants
+        })
+    }
+    
+    /// Check if this receipt is unconditional (has no unresolved assumptions)
+    /// 
+    /// Returns True for succinct or groth16 receipts, False for composite receipts.
+    /// Only unconditional receipts can be used as assumptions in composition.
+    #[getter]
+    pub fn is_unconditional(&self) -> PyResult<bool> {
+        use risc0_zkvm::InnerReceipt;
+        
+        Ok(match &self.inner.inner {
+            InnerReceipt::Composite(_) => false,  // May have unresolved assumptions
+            InnerReceipt::Succinct(_) => true,    // All assumptions resolved
+            InnerReceipt::Groth16(_) => true,     // Final proof, no assumptions
+            InnerReceipt::Fake(_) => true,        // Test receipts are "unconditional"
+            _ => false,  // Default for any future variants
+        })
+    }
+    
+    /// Check if this is a succinct receipt
+    #[getter]
+    pub fn is_succinct(&self) -> PyResult<bool> {
+        use risc0_zkvm::InnerReceipt;
+        
+        Ok(matches!(&self.inner.inner, InnerReceipt::Succinct(_)))
+    }
+    
+    /// Number of unresolved assumptions (0 for unconditional receipts)
+    /// 
+    /// Returns:
+    ///     0 for succinct/groth16 receipts (all assumptions resolved)
+    ///     N for composite receipts with N unresolved assumptions
+    #[getter]
+    pub fn assumption_count(&self) -> PyResult<usize> {
+        use risc0_zkvm::InnerReceipt;
+        
+        Ok(match &self.inner.inner {
+            InnerReceipt::Composite(composite) => {
+                // Access the assumptions vector from CompositeReceipt
+                composite.assumption_receipts.len()
+            },
+            _ => 0,  // Succinct, Groth16, and Fake have no assumptions
+        })
     }
     
     // ===== Verification methods =====
@@ -265,11 +373,43 @@ impl Receipt {
         Ok(())
     }
     
-    /// Legacy verify method - requires image_id parameter for security
-    /// Backward compatible with v0.3.0
-    pub fn verify(&self, image_id_bytes: &Bound<'_, PyAny>) -> PyResult<()> {
-        let bytes: Vec<u8> = image_id_bytes.extract()?;
-        self.verify_bytes(bytes)
+    /// Unified verify method - accepts bytes, hex string, or Image
+    /// 
+    /// Args:
+    ///     image_id: Expected image ID as:
+    ///               - 32-byte bytes
+    ///               - 64-char hex string (with or without 0x prefix)
+    ///               - Image object (uses its ID)
+    /// 
+    /// Raises:
+    ///     ValueError: If format is invalid
+    ///     RuntimeError: If verification fails
+    /// 
+    /// Example:
+    ///     receipt.verify(image.id)                    # bytes
+    ///     receipt.verify("0xabc123...")               # hex string
+    ///     receipt.verify(image)                        # Image object
+    pub fn verify(&self, image_id: &Bound<'_, PyAny>) -> PyResult<()> {
+        use crate::image::Image;
+        
+        // Try to extract as Image first
+        if let Ok(image) = image_id.extract::<PyRef<Image>>() {
+            return self.verify_bytes(image.id()?);
+        }
+        
+        // Try as string (hex)
+        if let Ok(hex_str) = image_id.extract::<String>() {
+            return self.verify_hex(&hex_str);
+        }
+        
+        // Try as bytes
+        if let Ok(bytes) = image_id.extract::<Vec<u8>>() {
+            return self.verify_bytes(bytes);
+        }
+        
+        Err(PyErr::new::<PyValueError, _>(
+            "image_id must be bytes (32 bytes), hex string (64 chars), or Image object"
+        ))
     }
     
     /// Deprecated: Use verify() instead
@@ -318,33 +458,6 @@ impl Receipt {
         )
     }
     
-    /// Export receipt as bytes for verification in a guest program (composition)
-    /// 
-    /// This serializes the receipt in a format that can be passed to another
-    /// RISC Zero guest program and verified using env::verify().
-    /// 
-    /// Returns:
-    ///     bytes: The serialized receipt
-    /// 
-    /// Example:
-    ///     ```python
-    ///     # Host: prepare inner proof for outer guest
-    ///     inner_receipt = pyr0.prove(inner_image, inner_input)
-    ///     receipt_bytes = inner_receipt.to_inner_bytes()
-    ///     
-    ///     # Package with other inputs for outer program
-    ///     outer_input = (
-    ///         pyr0.serialization.to_vec_u8(receipt_bytes) +
-    ///         pyr0.serialization.to_vec_u8(trusted_image_id)
-    ///     )
-    ///     ```
-    pub fn to_inner_bytes(&self) -> PyResult<Vec<u8>> {
-        bincode::serialize(&self.inner)
-            .map_err(|e| PyErr::new::<PyRuntimeError, _>(
-                format!("Failed to serialize receipt: {}", e)
-            ))
-    }
-    
     /// Check if this receipt was created by a specific image/program
     /// 
     /// This is a safety check to verify the receipt came from the expected
@@ -359,10 +472,10 @@ impl Receipt {
     /// Example:
     ///     ```python
     ///     expected_id = bytes.fromhex("abc123...")
-    ///     if not receipt.verify_image_id(expected_id):
+    ///     if not receipt.matches_image_id(expected_id):
     ///         raise ValueError("Receipt is from wrong program!")
     ///     ```
-    pub fn verify_image_id(&self, expected_image_id: Vec<u8>) -> PyResult<bool> {
+    pub fn matches_image_id(&self, expected_image_id: Vec<u8>) -> PyResult<bool> {
         if expected_image_id.len() != 32 {
             return Err(PyErr::new::<PyValueError, _>(
                 format!("Image ID must be 32 bytes, got {} bytes", expected_image_id.len())

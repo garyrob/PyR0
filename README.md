@@ -1,11 +1,28 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.6.0-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.7.0-orange)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **Note**: This is an experimental alpha release (v0.6.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **⚠️ IMPORTANT**: This is an experimental alpha release (v0.7.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> 
+> **🚧 TESTING STATUS**: The v0.7.0 API is a major refactor introducing safe proof composition. **Many unit tests are still needed** to validate the new Composer API, claim abstractions, and error handling. Use with caution in production.
+
+## Testing Requirements
+
+The following components need comprehensive unit tests:
+
+- [ ] **Composer API** - All writer methods, assumption validation, preflight checks
+- [ ] **Claim abstraction** - Property access, matching logic
+- [ ] **ReceiptKind enum** - Proper type checking in prove()
+- [ ] **Polymorphic verify()** - All input types (bytes, hex, Image)
+- [ ] **Error hierarchy** - Custom exceptions raised correctly
+- [ ] **Deduplication** - Assumption dedup by claim digest
+- [ ] **Tree aggregation** - Multiple env::verify() calls
+- [ ] **VerifierContext** - Batch verification efficiency
+- [ ] **Type stubs** - IDE autocomplete and mypy validation
+- [ ] **Edge cases** - Invalid inputs, malformed data, resource limits
 
 ## Overview
 
@@ -173,73 +190,6 @@ receipt.verify()
 # Access the image ID
 image_id = image.id
 ```
-
-### Proof Composition
-
-PyR0 supports proof composition, allowing one RISC Zero guest to verify proofs from another. This enables building multi-tier proof systems where an outer proof verifies one or more inner proofs.
-
-#### Python Side: Preparing Receipts for Composition
-
-```python
-# Generate inner proof
-inner_receipt = pyr0.prove(inner_image, inner_input)
-
-# Extract receipt for guest verification
-receipt_bytes = inner_receipt.to_inner_bytes()
-
-# Safety check: verify it's from expected program
-if not inner_receipt.verify_image_id(expected_inner_image_id):
-    raise ValueError("Inner receipt is from wrong program!")
-
-# Use the composition helper to package everything
-outer_input = pyr0.serialization.composition_input(
-    receipt_bytes,                # The inner proof to verify
-    trusted_inner_image_id,       # Expected image ID (32 bytes)
-    additional_data_1,            # Any additional data for outer program
-    additional_data_2             # More data as needed
-)
-
-# Generate outer proof that verifies the inner proof
-outer_receipt = pyr0.prove(outer_image, outer_input)
-```
-
-#### Rust Side: Verifying Receipts in Guest
-
-The `composition_input()` helper packages data so the guest can read it piece by piece:
-
-```rust
-use risc0_zkvm::guest::env;
-
-fn main() {
-    // Read what composition_input() packaged (in the same order)
-    let receipt_bytes: Vec<u8> = env::read();        // The inner receipt
-    let expected_image_id: Vec<u8> = env::read();    // Image ID to verify against
-    let additional_data_1: Vec<u8> = env::read();    // First additional data
-    let additional_data_2: Vec<u8> = env::read();    // Second additional data
-    
-    // Verify the inner proof using RISC Zero's built-in function
-    env::verify(&expected_image_id, &receipt_bytes).unwrap();
-    
-    // Optional: Extract the journal from the verified receipt
-    use bincode;
-    let receipt: Receipt = bincode::deserialize(&receipt_bytes).unwrap();
-    let inner_journal = receipt.journal.bytes;
-    
-    // Use the verified journal data
-    let credential_hash = &inner_journal[0..32];
-    let timestamp = u64::from_le_bytes(inner_journal[32..40].try_into().unwrap());
-    
-    // Continue with your logic using verified data + additional inputs
-    // ...
-}
-```
-
-#### Key Points
-
-- **`composition_input()`** uses `to_vec_u8()` internally for each argument
-- Each `to_vec_u8()` call on Python side corresponds to one `env::read()` on Rust side
-- The receipt bytes are compatible with RISC Zero's `env::verify()`
-- No special Rust-side decoder needed - uses standard RISC Zero functions
 
 ### Merkle Trees with Poseidon Hash
 
@@ -437,8 +387,8 @@ fn main() {
     env::read_slice(&mut inner_image_id);
     
     // Verify the inner proof (assumption)
-    // IMPORTANT: This doesn't verify immediately - it becomes an assumption
-    // that will be checked when the outer proof is generated
+    // env::verify takes the expected journal bytes and image ID
+    // This creates an assumption that gets verified when the outer proof is generated
     let expected_journal = risc0_zkvm::serde::to_vec(&expected_sum).unwrap();
     env::verify(inner_image_id, &expected_journal).unwrap();
     
@@ -479,17 +429,16 @@ journal_bytes = inner_receipt.journal_bytes
 sum_value = struct.unpack('<I', journal_bytes[:4])[0]  # Little-endian u32
 print(f"Inner proof computed: {a} + {b} = {sum_value}")
 
-# 4. Create ExecutorEnv with the inner proof as an assumption
-env = pyr0.ExecutorEnv()
-env.add_assumption(inner_receipt)  # KEY STEP: Add the inner proof
+# 4. Create a Composer with the inner proof as an assumption
+comp = pyr0.Composer(outer_image)
+comp.assume(inner_receipt)  # KEY STEP: Add the inner proof
 
-# 5. Provide input data for the outer guest
-# IMPORTANT: Use raw bytes, not serialization helpers
-env.write(struct.pack('<I', sum_value))  # Expected sum as 4 bytes
-env.write(inner_image_id)                # Inner image ID as 32 bytes
+# 5. Provide input data for the outer guest using typed writers
+comp.write_u32(sum_value)           # Expected sum (4 bytes)
+comp.write_image_id(inner_image_id) # Inner image ID (32 bytes)
 
-# 6. Generate the composed proof
-outer_receipt = pyr0.prove_with_env(outer_image, env)
+# 6. Generate the composed proof (defaults to succinct to resolve assumptions)
+outer_receipt = comp.prove()  # or comp.prove(kind=pyr0.ReceiptKind.SUCCINCT)
 
 # 7. Extract and verify the final result
 outer_journal = outer_receipt.journal_bytes
@@ -498,18 +447,19 @@ print(f"Outer proof computed: {sum_value} * 2 = {final_result}")
 
 # 8. Verify the composed proof
 # This single verification ensures BOTH computations are valid!
-outer_receipt.verify_hex(outer_image_id)
+outer_receipt.verify(outer_image_id)  # Can use hex, bytes, or Image
 print("✓ Composed proof verified - both computations are cryptographically proven!")
 ```
 
 ### Critical Implementation Details
 
-#### ExecutorEnv and Raw Bytes
+#### The Composer Pattern
 
-The `ExecutorEnv` class is the bridge between proofs:
-- Use `env.add_assumption(receipt)` to add proofs that need verification
-- Use `env.write(bytes)` to provide raw input data
-- In the guest, use `env::read_slice()` for raw bytes, not `env::read()`
+The `Composer` class provides a safer API for proof composition:
+- Use `comp.assume(receipt)` to add proofs that need verification
+- Use typed writers (`write_u32()`, `write_bytes32()`, etc.) for type-safe input
+- Use `comp.prove(kind="succinct")` to resolve assumptions
+- In the guest, use `env::read_slice()` for raw bytes from the typed writers
 
 #### Journal Data Extraction
 
@@ -536,15 +486,88 @@ This ensures you're not accepting proofs from arbitrary programs.
 
 ### Advanced Patterns
 
-#### Multiple Assumptions
+#### Tree Aggregation (Multiple Verifications)
 
-You can compose multiple proofs:
+The Composer API fully supports aggregating multiple proofs in a single guest. This is essential for building proof trees where one guest verifies multiple inner proofs:
+
 ```python
-env = pyr0.ExecutorEnv()
-env.add_assumption(proof1)
-env.add_assumption(proof2)
-env.add_assumption(proof3)
+# Example: Aggregator that verifies two inner proofs
+import pyr0
+
+# 1. Generate two independent proofs
+left_receipt = pyr0.prove_with_opts(left_image, left_input, succinct=True)
+right_receipt = pyr0.prove_with_opts(right_image, right_input, succinct=True)
+
+# 2. Create aggregator that will verify both
+comp = pyr0.Composer(aggregator_image)
+
+# 3. Add both receipts as assumptions (automatically deduped if identical)
+comp.assume(left_receipt)   # Must be succinct or groth16
+comp.assume(right_receipt)  # Must be succinct or groth16
+
+# 4. Write the data the aggregator guest expects
+# The guest will call env::verify() twice, once for each proof
+comp.write_image_id(left_image.id)
+comp.write_slice(left_receipt.journal_bytes)
+comp.write_image_id(right_image.id) 
+comp.write_slice(right_receipt.journal_bytes)
+
+# 5. Register expected verifications for preflight checking
+comp.expect_verification(left_image.id, left_receipt.journal_bytes)
+comp.expect_verification(right_image.id, right_receipt.journal_bytes)
+
+# 6. Generate the aggregated proof (defaults to succinct)
+# This runs the recursion program to resolve both assumptions
+aggregated = comp.prove()  # Will raise if preflight checks fail
+
+# The aggregated receipt proves both inner computations are valid!
+print(f"Aggregated proof kind: {aggregated.kind}")  # ReceiptKind.SUCCINCT
+print(f"Is unconditional: {aggregated.is_unconditional}")  # True
+```
+
+The corresponding aggregator guest would look like:
+```rust
+use risc0_zkvm::guest::env;
+
+fn main() {
+    // Read and verify left proof
+    let mut left_image_id = [0u8; 32];
+    env::read_slice(&mut left_image_id);
+    let mut left_journal_len = [0u8; 8];
+    env::read_slice(&mut left_journal_len);
+    let len = u64::from_le_bytes(left_journal_len) as usize;
+    let mut left_journal = vec![0u8; len];
+    env::read_slice(&mut left_journal);
+    
+    env::verify(left_image_id, &left_journal).unwrap();
+    
+    // Read and verify right proof  
+    let mut right_image_id = [0u8; 32];
+    env::read_slice(&mut right_image_id);
+    let mut right_journal_len = [0u8; 8];
+    env::read_slice(&mut right_journal_len);
+    let len = u64::from_le_bytes(right_journal_len) as usize;
+    let mut right_journal = vec![0u8; len];
+    env::read_slice(&mut right_journal);
+    
+    env::verify(right_image_id, &right_journal).unwrap();
+    
+    // Perform aggregated computation
+    // Both proofs are now verified!
+    env::commit(&"Both proofs valid");
+}
+```
+
+#### Multiple Assumptions (Simplified)
+
+For simpler cases where you're just verifying multiple instances of the same guest:
+```python
+comp = pyr0.Composer(aggregator_image)
+comp.assume(proof1)
+comp.assume(proof2)
+comp.assume(proof3)
 # All three proofs will be verified with the final proof
+receipt = comp.prove()
 ```
 
 #### Conditional Composition
@@ -564,14 +587,16 @@ if expected_sum > 100 {
 You can chain compositions:
 ```python
 # First composition
-env1 = pyr0.ExecutorEnv()
-env1.add_assumption(inner_receipt)
-middle_receipt = pyr0.prove_with_env(middle_image, env1)
+comp1 = pyr0.Composer(middle_image)
+comp1.assume(inner_receipt)
+comp1.write_u32(value)
+middle_receipt = comp1.prove(kind="succinct")
 
 # Second composition
-env2 = pyr0.ExecutorEnv()
-env2.add_assumption(middle_receipt)
-outer_receipt = pyr0.prove_with_env(outer_image, env2)
+comp2 = pyr0.Composer(outer_image)
+comp2.assume(middle_receipt)
+comp2.write_u32(another_value)
+outer_receipt = comp2.prove(kind="succinct")
 ```
 
 ### Use Cases
@@ -694,6 +719,20 @@ env::commit_slice(&borsh::to_vec(&output)?);
 from borsh_construct import CStruct
 output = OutputSchema.parse(receipt.journal)
 ```
+
+## Known Issues & Limitations
+
+### v0.7.0 Testing Gaps
+
+This release includes major API improvements but **lacks comprehensive test coverage**:
+
+- **Composer API**: Assumption validation, preflight checks, and error paths are untested
+- **Claim abstraction**: New first-class concept needs validation
+- **Type safety**: Polymorphic functions and enum parameters need edge case testing  
+- **Error handling**: Custom exception hierarchy not fully exercised
+- **Composition patterns**: Tree aggregation and multi-verify scenarios untested
+
+**Contributors needed**: Help improve test coverage before using in production!
 
 ## Development
 
