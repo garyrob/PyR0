@@ -349,27 +349,26 @@ impl Receipt {
             .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Verification failed: {e}")))
     }
     
-    /// Verify only the integrity of the proof (seal matches claim and journal)
-    /// without checking the image ID or enforcing success.
+    /// Check if the receipt has a valid claim structure.
     /// 
-    /// Useful for inspecting failed executions safely.
+    /// Note: This only validates that the claim is well-formed and not pruned.
+    /// It does NOT verify the cryptographic seal. Full seal verification 
+    /// requires using verify() which also checks execution success.
     /// 
     /// Raises:
-    ///     RuntimeError: If integrity check fails
+    ///     RuntimeError: If claim is invalid or pruned
     pub fn verify_integrity(&self) -> PyResult<()> {
-        // We need to check that the seal is valid for the claim, but not enforce success
-        // Unfortunately, RISC Zero's verify() also checks success, so we need a workaround
-        // We'll extract the claim and at least validate it's well-formed
-        let _claim_pruned = self.inner.claim()
-            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Integrity check failed - invalid claim: {e}")))?;
+        // Extract and validate the claim structure
+        let claim_pruned = self.inner.claim()
+            .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("Invalid claim: {e}")))?;
         
-        let _claim = match _claim_pruned.as_value() {
+        // Ensure claim is not pruned
+        let _claim = match claim_pruned.as_value() {
             Ok(claim) => claim,
-            Err(_) => return Err(PyErr::new::<PyRuntimeError, _>("Integrity check failed - claim is pruned")),
+            Err(_) => return Err(PyErr::new::<PyRuntimeError, _>("Claim is pruned - cannot validate")),
         };
         
-        // TODO: When RISC Zero exposes integrity-only verification, use it here
-        // For now, we at least validate the claim structure
+        // Claim is valid and not pruned
         Ok(())
     }
     

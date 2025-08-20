@@ -36,12 +36,6 @@ except ImportError as e:
     print(f"  ✗ Cannot import ReceiptKind: {e}")
 
 try:
-    from pyr0._rust import VerifierContext
-    print("  ✓ VerifierContext imported")
-except ImportError as e:
-    print(f"  ✗ Cannot import VerifierContext: {e}")
-
-try:
     from pyr0 import prove_succinct
     print("  ✓ prove_succinct function imported")
 except ImportError as e:

@@ -54,25 +54,3 @@ def ed25519_input(
         Serialized input for the guest program
     """
     ...
-
-def merkle_commitment_input(
-    k_pub: Union[bytes, bytearray],
-    r: Union[bytes, bytearray],
-    e: Union[bytes, bytearray],
-    siblings: List[Union[bytes, bytearray]],
-    indices: List[int]
-) -> bytes:
-    """
-    Create input for Merkle proof verification with 2LA-style commitments.
-    
-    Args:
-        k_pub: 32-byte public key
-        r: 32-byte randomness
-        e: 32-byte hash value
-        siblings: List of 32-byte sibling hashes (must be exactly 16 for 16-level tree)
-        indices: List of path indices (0 or 1) for tree traversal
-    
-    Returns:
-        Serialized input for the guest program
-    """
-    ...

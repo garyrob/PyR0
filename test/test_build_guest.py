@@ -31,16 +31,13 @@ def test_build_guest():
             print(f"   ✓ Built guest at: {elf_path}")
             print(f"   ⏱ Build time: {build_time:.2f} seconds")
             
-            # Verify the file exists
-            start_verify = time.time()
+            # Check the file exists
             if not elf_path.exists():
                 print(f"   ✗ ELF path returned but file doesn't exist!")
                 test_passed = False
             else:
                 size = os.path.getsize(elf_path)
-                verify_time = time.time() - start_verify
                 print(f"   ✓ ELF exists, size: {size:,} bytes")
-                print(f"   ⏱ Verification time: {verify_time:.4f} seconds")
         except Exception as e:
             print(f"   ✗ Failed to build guest: {e}")
             test_passed = False
@@ -54,15 +51,12 @@ def test_build_guest():
             print(f"   ✓ Rebuilt guest at: {elf_path2}")
             print(f"   ⏱ Build time: {build_time:.2f} seconds")
             
-            # Verify paths match
-            start_verify = time.time()
+            # Check paths match
             if elf_path != elf_path2:
                 print(f"   ✗ Path changed on rebuild: {elf_path} != {elf_path2}")
                 test_passed = False
             else:
-                verify_time = time.time() - start_verify
                 print(f"   ✓ Path consistency verified")
-                print(f"   ⏱ Verification time: {verify_time:.4f} seconds")
         except Exception as e:
             print(f"   ✗ Failed to rebuild guest: {e}")
             test_passed = False

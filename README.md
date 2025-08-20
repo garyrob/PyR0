@@ -1,13 +1,13 @@
 # PyR0 - Python Interface for RISC Zero zkVM
 
-[![Version](https://img.shields.io/badge/version-0.7.0-orange)](https://github.com/garyrob/PyR0/releases)
+[![Version](https://img.shields.io/badge/version-0.8.0-green)](https://github.com/garyrob/PyR0/releases)
 **⚠️ Experimental Alpha - Apple Silicon Only**
 
 Python bindings for [RISC Zero](https://www.risczero.com/) zkVM, enabling zero-knowledge proof generation and verification from Python.
 
-> **⚠️ IMPORTANT**: This is an experimental alpha release (v0.7.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
+> **⚠️ IMPORTANT**: This is an experimental release (v0.8.0) currently targeting Apple Silicon (M1/M2/M3) Macs only.
 > 
-> **🚧 TESTING STATUS**: The v0.7.0 API is a major refactor introducing safe proof composition. **Many unit tests are still needed** to validate the new Composer API, claim abstractions, and error handling. Use with caution in production.
+> **🚧 ALPHA STATUS**: v0.8.0 removes all placeholder APIs and enforces production-safe defaults (release-only builds, no mocking). Still experimental and limited to Apple Silicon.
 
 ## Testing Requirements
 
@@ -29,7 +29,6 @@ The following components need comprehensive unit tests:
 PyR0 provides a Python interface to RISC Zero's zero-knowledge virtual machine, allowing you to:
 - Execute RISC Zero guest programs from Python
 - Generate and verify zero-knowledge proofs
-- Build Merkle trees with Poseidon hash for ZK circuits
 - Serialize data for guest program inputs
 
 ### Architecture
@@ -117,19 +116,34 @@ env::commit_slice(&borsh::to_vec(&output).unwrap());
 - RISC Zero toolchain (`cargo risczero` installed via `cargo install cargo-risczero`)
 - [uv](https://docs.astral.sh/uv/) package manager
 
-### Building from Source
+### Installation for Users
+
+#### From PyPI (Coming Soon)
+
+Once published, you'll be able to install PyR0 directly:
 
 ```bash
-# Clone the repository
-git clone https://github.com/garyrob/PyR0.git
-cd PyR0
-
-# Build and install with uv
-uv tool run maturin build --release
-uv pip install --force-reinstall target/wheels/PyR0-*-macosx_11_0_arm64.whl
+# Install PyR0 as a dependency
+uv add PyR0==0.8.0
+# or with pip
+pip install PyR0==0.8.0
 ```
 
-For development with editable installs, see [CLAUDE.md](CLAUDE.md) for important notes about uv's behavior.
+#### From Source (For Users)
+
+If you want to use PyR0 from source in your project:
+
+```bash
+# Clone and build
+git clone https://github.com/garyrob/PyR0.git
+cd PyR0
+uv tool run maturin build --release
+
+# In your project directory
+cd /path/to/your/project
+uv add PyR0==0.8.0 --find-links /path/to/PyR0/target/wheels
+```
+
 
 ## Features
 
@@ -146,8 +160,8 @@ elf_path = pyr0.build_guest("path/to/guest", "binary-name")
 # Auto-detect binary name from Cargo.toml
 elf_path = pyr0.build_guest("path/to/guest")
 
-# Build in debug mode (faster compile, slower execution)
-elf_path = pyr0.build_guest("path/to/guest", release=False)
+# Always builds in release mode for optimal performance
+# Debug builds are not supported due to severe performance issues
 ```
 
 The `build_guest` function:
@@ -181,43 +195,159 @@ image = pyr0.load_image(elf_data)
 input_data = b"your input data"  # Direct bytes, no wrapper needed
 receipt = pyr0.prove(image, input_data)
 
-# Get the journal (public outputs) as a property
+# For unconditional proofs (no unresolved assumptions):
+receipt = pyr0.prove_succinct(image, input_data)
+# Equivalent to: pyr0.prove(image, input_data, kind=pyr0.ReceiptKind.SUCCINCT)
+
+# Get the journal (public outputs)
 journal = receipt.journal
 
 # Verify the proof
-receipt.verify()
+receipt.verify()  # Or receipt.verify(image.id_hex) to verify against expected image
 
 # Access the image ID
-image_id = image.id
+image_id = image.id       # 32 bytes
+image_id_hex = image.id_hex  # Hex string
 ```
 
-### Merkle Trees with Poseidon Hash
-
-Build sparse Merkle trees compatible with zero-knowledge circuits:
-
-```python
-import merkle_py
-
-# Create a sparse Merkle tree
-tree = merkle_py.MerkleTree()
-
-# Insert keys
-tree.insert("0x0000000000000000000000000000000000000000000000000000000000000001")
-tree.insert("0x0000000000000000000000000000000000000000000000000000000000000002")
-
-# Get the root
-root = tree.root()
-
-# Generate a Merkle proof (16 levels for Noir compatibility)
-siblings, bits = tree.merkle_path_16(key)
-
-# Use Poseidon hash directly
-hash_result = merkle_py.poseidon_hash([input1, input2])
-```
 
 ### Data Serialization
 
-PyR0 provides serialization helpers for sending data to RISC Zero guest programs. The choice of serialization method depends on how your guest reads the data:
+PyR0 provides multiple approaches for sending data to RISC Zero guest programs. **Choose ONE pattern per guest** to avoid serialization mismatches:
+
+#### InputBuilder API - Three Safe Patterns
+
+##### Pattern A: CBOR-Only (Recommended for complex data)
+
+Use when your guest needs structured data with variable-length fields.
+
+**Important:** `write_cbor(b)` and `write_cbor_frame(b)` expect **CBOR-encoded bytes**. Always encode your Python objects first:
+
+```python
+import pyr0
+from cbor2 import dumps as cbor_dumps
+
+builder = pyr0.InputBuilder()
+# Encode your data to CBOR bytes with canonical settings for determinism
+data = {"user_id": 123, "values": [1, 2, 3], "config": {"threshold": 100}}
+cbor_bytes = cbor_dumps(data, canonical=True)
+builder.write_cbor(cbor_bytes)  # Pass the encoded bytes
+input_data = builder.build()
+receipt = pyr0.prove(image, input_data)
+```
+
+**Guest code:**
+```rust
+use minicbor::{Decode, Encode};
+use std::io::Read;
+
+#[derive(Decode, Encode)]
+struct Input {
+    #[n(0)] user_id: u32,
+    #[n(1)] values: Vec<u32>,
+    #[n(2)] config: Config,
+}
+
+fn main() {
+    let mut buf = Vec::new();
+    env::stdin().read_to_end(&mut buf).unwrap();
+    let input: Input = minicbor::decode(&buf).unwrap();  // Entire stdin is ONE CBOR object
+}
+```
+
+##### Pattern B: Raw-Only (Fast for fixed-size data)
+
+Use when all data has known fixed sizes:
+
+```python
+builder = pyr0.InputBuilder()
+builder.write_u32(42)           # 4 bytes, little-endian
+builder.write_u64(1000000)      # 8 bytes, little-endian  
+builder.write_bytes32(key)      # Enforces exactly 32 bytes
+input_data = builder.build()
+```
+
+**Guest code:**
+```rust
+fn main() {
+    // Read each field with exact size
+    let mut n = [0u8; 4];
+    env::read_slice(&mut n);
+    let value = u32::from_le_bytes(n);
+    
+    let mut m = [0u8; 8];
+    env::read_slice(&mut m);
+    let large = u64::from_le_bytes(m);
+    
+    let mut key = [0u8; 32];
+    env::read_slice(&mut key);
+}
+```
+
+##### Pattern C: Framed (Safe mixing of CBOR and raw)
+
+Use when you need both structured and raw data:
+
+```python
+from cbor2 import dumps as cbor_dumps
+
+builder = pyr0.InputBuilder()
+# CBOR with frame: [8-byte length][CBOR data]
+config = {"user_id": 123, "settings": {...}}
+cbor_bytes = cbor_dumps(config, canonical=True)
+builder.write_cbor_frame(cbor_bytes)  # Framed for safe mixing
+# Raw fields after the frame
+builder.write_u32(42)
+builder.write_raw_bytes(signature)  # Exactly 64 bytes
+input_data = builder.build()
+```
+
+**Guest code:**
+```rust
+fn main() {
+    // Read CBOR frame
+    let mut len_bytes = [0u8; 8];
+    env::read_slice(&mut len_bytes);
+    let len = u64::from_le_bytes(len_bytes) as usize;
+    
+    let mut cbor_data = vec![0u8; len];
+    env::read_slice(&mut cbor_data);
+    let config: Config = minicbor::decode(&cbor_data).unwrap();
+    
+    // Read raw fields after frame
+    let mut n = [0u8; 4];
+    env::read_slice(&mut n);
+    let extra = u32::from_le_bytes(n);
+    
+    let mut sig = [0u8; 64];
+    env::read_slice(&mut sig);
+}
+```
+
+#### InputBuilder Wire Format Reference
+
+**Format:** Writes are concatenated byte-for-byte in order. No padding or alignment is inserted.
+
+| Method | Bytes on Wire | Guest Read Method | Notes |
+|--------|--------------|-------------------|--------|
+| `write_u32(x)` | 4 bytes, **little-endian** | `read_slice(&mut [u8;4])` → `u32::from_le_bytes()` | Fixed size |
+| `write_u64(x)` | 8 bytes, **little-endian** | `read_slice(&mut [u8;8])` → `u64::from_le_bytes()` | Fixed size |
+| `write_bytes32(b)` | 32 raw bytes | `read_slice(&mut [u8;32])` | Enforces exactly 32 bytes |
+| `write_image_id(id)` | 32 raw bytes | `read_slice(&mut [u8;32])` | Alias for write_bytes32 |
+| `write_raw_bytes(b)` | len(b) raw bytes | `read_slice(&mut [u8;N])` | Guest must know exact size |
+| `write_cbor(b)` | CBOR bytes, **no prefix** | `minicbor::decode(&all_stdin)` | Use alone (Pattern A); pass CBOR-encoded bytes |
+| `write_cbor_frame(b)` | [8-byte len LE] + CBOR | Read len, then decode | Safe for mixing (Pattern C); pass CBOR-encoded bytes |
+| `write_frame(b)` | [8-byte len LE] + bytes | Read len, then bytes | Variable-length raw data |
+
+**⚠️ Critical Rules:**
+- **Never mix** `write_cbor()` with other methods - the decoder will fail
+- **Always use canonical CBOR** (`canonical=True`) for deterministic encoding
+- **Use frames** (`write_cbor_frame()`) when mixing CBOR with raw fields
+- All integers are **little-endian**
+
+#### Legacy Serialization Helpers (For env::read)
+
+These helpers match `env::read()` semantics: fixed-size primitives are little-endian; variable-length types include a length prefix. They are kept for backward compatibility but **InputBuilder patterns above are recommended** for new code:
 
 #### For Guests Using `env::read()`
 
@@ -262,9 +392,6 @@ Pre-built serializers for common cryptographic operations:
 # For Ed25519 signature verification (uses env::read() format)
 input_data = serialization.ed25519_input(public_key, signature, message)
 
-# For Merkle proofs with 2LA-style commitments (uses env::read_slice() format)
-# Note: Expects exactly 16 siblings for a 16-level tree
-input_data = serialization.merkle_commitment_input(k_pub, r, e, siblings, indices)
 ```
 
 #### Choosing Between `env::read()` and `env::read_slice()`
@@ -351,6 +478,41 @@ The key insight: when you verify the outer receipt, RISC Zero automatically ensu
 
 ### Complete Working Example
 
+#### Using the Simplified API with Safe Patterns
+
+PyR0 v0.7.0 introduces a simplified API for proof composition using consistent patterns:
+
+```python
+import pyr0
+import struct
+
+# Build both guests
+inner_image = pyr0.load_image(pyr0.build_guest("inner_guest"))
+outer_image = pyr0.load_image(pyr0.build_guest("outer_guest"))
+
+# 1. Generate inner proof (Pattern B: Raw-only)
+inner_builder = pyr0.InputBuilder()
+inner_builder.write_u32(3).write_u32(5)  # Two fixed-size values
+inner_receipt = pyr0.prove(inner_image, inner_builder.build())
+
+# 2. Extract sum from inner proof's journal
+journal = inner_receipt.journal
+expected_sum = struct.unpack('<I', journal[:4])[0]  # 8
+
+# 3. Compose with outer proof (Pattern B: Raw-only for consistency)
+comp = pyr0.Composer(outer_image)
+comp.assume(inner_receipt)
+
+# Write raw fields that the outer guest expects
+comp.write_u32(expected_sum)      # 4 bytes
+comp.write_bytes32(inner_image.id) # 32 bytes (enforces length)
+
+# 4. Generate and verify composed proof
+outer_receipt = comp.prove()
+outer_receipt.verify(outer_image)
+print("✓ Composed proof verified!")
+```
+
 #### Step 1: Set Up Your Inner Guest
 
 Create `inner_guest/src/main.rs`:
@@ -358,9 +520,14 @@ Create `inner_guest/src/main.rs`:
 use risc0_zkvm::guest::env;
 
 fn main() {
-    // Read two numbers from the host
-    let a: u32 = env::read();
-    let b: u32 = env::read();
+    // Pattern B: Raw-only - read fixed-size values
+    let mut a_bytes = [0u8; 4];
+    env::read_slice(&mut a_bytes);
+    let a = u32::from_le_bytes(a_bytes);
+    
+    let mut b_bytes = [0u8; 4];
+    env::read_slice(&mut b_bytes);
+    let b = u32::from_le_bytes(b_bytes);
     
     // Perform computation
     let sum = a + b;
@@ -377,7 +544,8 @@ Create `outer_guest/src/main.rs`:
 use risc0_zkvm::guest::env;
 
 fn main() {
-    // Read expected values from host using read_slice for raw bytes
+    // Pattern B: Raw-only - consistent with inner guest
+    // Read expected sum (4 bytes)
     let mut sum_bytes = [0u8; 4];
     env::read_slice(&mut sum_bytes);
     let expected_sum = u32::from_le_bytes(sum_bytes);
@@ -387,7 +555,7 @@ fn main() {
     env::read_slice(&mut inner_image_id);
     
     // Verify the inner proof (assumption)
-    // env::verify takes the expected journal bytes and image ID
+    // env::verify takes the image ID and expected journal bytes
     // This creates an assumption that gets verified when the outer proof is generated
     let expected_journal = risc0_zkvm::serde::to_vec(&expected_sum).unwrap();
     env::verify(inner_image_id, &expected_journal).unwrap();
@@ -414,8 +582,8 @@ inner_image = pyr0.load_image(inner_elf)
 outer_image = pyr0.load_image(outer_elf)
 
 # Save image IDs for verification
-inner_image_id = inner_image.image_id_bytes
-outer_image_id = pyr0.compute_image_id_hex(outer_elf)
+inner_image_id = inner_image.id  # 32 bytes
+outer_image_id = outer_image.id_hex  # hex string
 
 # 2. Generate the inner proof
 # Prepare input: two u32 values
@@ -425,23 +593,23 @@ inner_receipt = pyr0.prove(inner_image, inner_input)
 
 # 3. Extract the sum from inner proof's journal
 # The journal contains the raw bytes of what was committed
-journal_bytes = inner_receipt.journal_bytes
-sum_value = struct.unpack('<I', journal_bytes[:4])[0]  # Little-endian u32
+journal = inner_receipt.journal
+sum_value = struct.unpack('<I', journal[:4])[0]  # Little-endian u32
 print(f"Inner proof computed: {a} + {b} = {sum_value}")
 
 # 4. Create a Composer with the inner proof as an assumption
 comp = pyr0.Composer(outer_image)
 comp.assume(inner_receipt)  # KEY STEP: Add the inner proof
 
-# 5. Provide input data for the outer guest using typed writers
+# 5. Provide input data for the outer guest using typed writers (Pattern B: Raw-only)
 comp.write_u32(sum_value)           # Expected sum (4 bytes)
-comp.write_image_id(inner_image_id) # Inner image ID (32 bytes)
+comp.write_bytes32(inner_image_id)  # Inner image ID (32 bytes, enforced)
 
 # 6. Generate the composed proof (defaults to succinct to resolve assumptions)
 outer_receipt = comp.prove()  # or comp.prove(kind=pyr0.ReceiptKind.SUCCINCT)
 
 # 7. Extract and verify the final result
-outer_journal = outer_receipt.journal_bytes
+outer_journal = outer_receipt.journal
 final_result = struct.unpack('<I', outer_journal[:4])[0]
 print(f"Outer proof computed: {sum_value} * 2 = {final_result}")
 
@@ -466,12 +634,12 @@ The `Composer` class provides a safer API for proof composition:
 When extracting data from journals:
 ```python
 # For a u32 value committed in the guest
-journal_bytes = receipt.journal_bytes
-value = struct.unpack('<I', journal_bytes[:4])[0]  # Little-endian
+journal = receipt.journal
+value = struct.unpack('<I', journal[:4])[0]  # Little-endian
 
 # For multiple values, track offsets
-first_u32 = struct.unpack('<I', journal_bytes[0:4])[0]
-second_u32 = struct.unpack('<I', journal_bytes[4:8])[0]
+first_u32 = struct.unpack('<I', journal[0:4])[0]
+second_u32 = struct.unpack('<I', journal[4:8])[0]
 ```
 
 #### Image ID Verification
@@ -494,9 +662,9 @@ The Composer API fully supports aggregating multiple proofs in a single guest. T
 # Example: Aggregator that verifies two inner proofs
 import pyr0
 
-# 1. Generate two independent proofs
-left_receipt = pyr0.prove_with_opts(left_image, left_input, succinct=True)
-right_receipt = pyr0.prove_with_opts(right_image, right_input, succinct=True)
+# 1. Generate two independent proofs (must be unconditional)
+left_receipt = pyr0.prove_succinct(left_image, left_input)
+right_receipt = pyr0.prove_succinct(right_image, right_input)
 
 # 2. Create aggregator that will verify both
 comp = pyr0.Composer(aggregator_image)
@@ -508,13 +676,13 @@ comp.assume(right_receipt)  # Must be succinct or groth16
 # 4. Write the data the aggregator guest expects
 # The guest will call env::verify() twice, once for each proof
 comp.write_image_id(left_image.id)
-comp.write_slice(left_receipt.journal_bytes)
+comp.write_frame(left_receipt.journal)
 comp.write_image_id(right_image.id) 
-comp.write_slice(right_receipt.journal_bytes)
+comp.write_frame(right_receipt.journal)
 
 # 5. Register expected verifications for preflight checking
-comp.expect_verification(left_image.id, left_receipt.journal_bytes)
-comp.expect_verification(right_image.id, right_receipt.journal_bytes)
+comp.expect_verification(left_image.id, left_receipt.journal)
+comp.expect_verification(right_image.id, right_receipt.journal)
 
 # 6. Generate the aggregated proof (defaults to succinct)
 # This runs the recursion program to resolve both assumptions
@@ -640,12 +808,6 @@ See [demo/ed25519_demo.py](demo/ed25519_demo.py) for a complete example of:
 - Generating zero-knowledge proofs of signature validity
 - Verifying program identity via ImageID
 
-### Merkle Zero-Knowledge Proofs
-
-See [demo/merkle_zkp_demo.py](demo/merkle_zkp_demo.py) for a complete example of:
-- Building Merkle trees with user commitments
-- Generating zero-knowledge proofs of membership
-- Privacy-preserving authentication (proving you're in a set without revealing which member)
 
 ## Project Structure
 
@@ -654,16 +816,13 @@ PyR0/
 ├── src/               # Rust source code
 │   ├── lib.rs        # Main PyO3 bindings
 │   ├── image.rs      # RISC Zero image handling
-│   ├── segment.rs    # Proof generation
-│   └── receipt.rs    # Proof verification
-├── merkle/           # Merkle tree module
-│   └── src/          # Merkle tree implementation
+│   ├── receipt.rs    # Proof verification
+│   ├── composer.rs   # Proof composition API
+│   ├── input_builder.rs # Input data serialization
+│   └── verifier.rs   # Batch verification
 ├── demo/             # Example scripts
-│   ├── merkle_zkp_demo.py     # Merkle ZKP demonstration
-│   ├── merkle_proof_guest/    # RISC Zero guest for Merkle proofs
 │   └── ed25519_demo.py        # Ed25519 verification demo
-├── test/             # Test scripts
-└── CLAUDE.md         # Development notes
+└── test/             # Test scripts
 ```
 
 ## Common Pitfalls
@@ -734,30 +893,124 @@ This release includes major API improvements but **lacks comprehensive test cove
 
 **Contributors needed**: Help improve test coverage before using in production!
 
-## Development
+## Contributing to PyR0
 
-This project uses [maturin](https://www.maturin.rs/) for building Python extensions from Rust. Key commands:
+### For Contributors: Development Setup
 
+This section is for developers contributing to PyR0 itself. If you're just using PyR0 in your project, see the Installation section above.
+
+#### Prerequisites
+
+- Rust toolchain with cargo
+- [maturin](https://www.maturin.rs/) (installed automatically via uv)
+- [uv](https://docs.astral.sh/uv/) package manager
+- Python 3.8.3+
+
+#### Development Workflow
+
+PyR0 uses maturin to build Python extensions from Rust. Due to the nature of compiled extensions, we use a specific workflow:
+
+**⚠️ CRITICAL: Always use release builds for PyR0**
 ```bash
-# Build release wheel
+# ALWAYS use this:
 uv tool run maturin build --release
 
-# Install the built wheel (force reinstall to avoid cache issues)
-uv pip install --force-reinstall target/wheels/PyR0-0.2.0-*.whl
-
-# Run tests/demos
-uv run demo/ed25519_demo.py
-uv run demo/merkle_zkp_demo.py
-uv run test/test_merkle_zkp.py
+# NEVER use this:
+uv tool run maturin develop  # ❌ DO NOT USE - causes severe issues
 ```
 
-### Important Build Notes
+**Why `maturin develop` must not be used:**
+- **Performance**: Debug builds are 100-1000x slower for RISC Zero operations
+- **Guest failures**: Debug mode causes zkVM segment timeouts and memory exhaustion  
+- **Test reliability**: Tests may pass in debug but fail in production
+- **Missing optimizations**: Critical SIMD and cryptographic optimizations are disabled
 
-After making changes to ANY file (Rust or Python), you must rebuild and reinstall:
-1. Build: `uv tool run maturin build --release`
-2. Install: `uv pip install --force-reinstall target/wheels/PyR0-*.whl`
+```bash
+# Clone the repository
+git clone https://github.com/garyrob/PyR0.git
+cd PyR0
 
-The `--force-reinstall` flag is crucial to ensure you're using the latest version.
+# After making changes to Rust code (src/*.rs):
+
+# 1. Build the wheel (always with --release)
+uv tool run maturin build --release
+
+# 2. Sync project dependencies (cbor2, etc.)
+uv sync
+
+# 3. Install the built wheel using uv pip
+# We use uv pip here because PyR0 builds itself
+uv pip install -U PyR0==0.8.0  # Use version from pyproject.toml
+
+# 4. Run tests/demos
+uv run python demo/ed25519_demo.py
+uv run python test/test_input_builder.py
+```
+
+#### Why `uv pip install` for Contributors?
+
+Contributors must use `uv pip install` rather than `uv add` because:
+- The project name is `pyr0` (what we're developing)
+- We're installing `PyR0` (the built wheel)
+- uv correctly prevents self-dependencies with `uv add`
+- `uv pip install` installs the compiled wheel directly from `./target/wheels`
+
+#### Project Configuration Explained
+
+The project has special configuration to support this workflow:
+
+**pyproject.toml:**
+```toml
+[tool.uv]
+package = false  # Prevents uv from rebuilding PyR0 on every run
+
+[tool.uv.pip]
+find-links = ["./target/wheels"]  # Tells uv pip where to find built wheels
+```
+
+This configuration:
+- `package = false` stops uv from treating PyR0 as an editable package
+- `find-links` allows `uv pip install` to find locally built wheels
+- Ensures you're testing the actual compiled extension, not source files
+
+#### Important: Avoid Editable Installs
+
+**Never use editable installs** (`pip install -e .` or default uv behavior) with PyR0. Editable installs will cause Python to import from the source directory instead of the compiled extension module, leading to:
+- Missing attributes on PyO3 classes (e.g., `AttributeError: 'pyr0.Image' object has no attribute 'id_hex'`)
+- Import errors for new modules
+- Tests using outdated code even after rebuilding
+
+Always follow the workflow above: build → sync → pip install.
+
+#### Running Tests
+
+After building and installing:
+
+```bash
+# Run individual test files
+uv run python test/test_input_builder.py
+uv run python test_cbor_serialization.py
+
+# Run demos
+uv run python demo/ed25519_demo.py
+```
+
+#### Debugging Build Issues
+
+If you encounter issues:
+
+```bash
+# Clean build
+rm -rf target/wheels/*.whl
+uv tool run maturin build --release
+
+# Check what's installed
+uv pip list | grep -i pyr0
+
+# Force reinstall if needed
+uv pip uninstall PyR0
+uv pip install PyR0==0.8.0  # Version from pyproject.toml
+```
 
 ## Acknowledgments
 

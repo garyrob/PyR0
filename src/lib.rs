@@ -3,14 +3,14 @@ mod receipt;
 mod session;
 mod claim;
 mod composer;
-mod verifier;
+mod input_builder;
 
 use crate::image::Image;
 use crate::receipt::{Receipt, ExitStatus, ExitKind, ReceiptKind};
 use crate::session::{ExitCode, SessionInfo};
 use crate::claim::Claim;
 use crate::composer::Composer;
-use crate::verifier::VerifierContext;
+use crate::input_builder::InputBuilder;
 use pyo3::prelude::*;
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
 
@@ -249,7 +249,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ReceiptKind>()?;
     m.add_class::<Claim>()?;
     m.add_class::<Composer>()?;
-    m.add_class::<VerifierContext>()?;
+    m.add_class::<InputBuilder>()?;
     
     // Core API functions
     m.add_function(wrap_pyfunction!(load_image, m)?)?;

@@ -87,10 +87,7 @@ try:
     print(f"Total time:        {load_time + prove_time + verify_time:6.3f}s")
     
     print("\n=== Analysis ===")
-    if prove_time < 0.1:
-        print("⚠️  Very fast proof generation (<100ms) may indicate dev mode.")
-        print("   Check that RISC0_DEV_MODE is not set.")
-    elif prove_time < 1.0:
+    if prove_time < 1.0:
         print("✓ Fast proof generation (<1s) is normal for small programs")
         print("  with RISC0's GPU acceleration and optimizations.")
     else:

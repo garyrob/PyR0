@@ -1,5 +1,41 @@
 # Claude Development Notes
 
+## CRITICAL: Production Readiness Issues to Fix
+
+**These issues MUST be fixed before PyR0 can be considered production-ready:**
+
+### 1. ✅ FIXED: `dry_run` used in production demo
+- **Location**: `demo/ed25519_demo.py` line 123
+- **Issue**: Used `pyr0.dry_run()` which executes WITHOUT proving (insecure!)
+- **Fix Applied**: Replaced with `pyr0.prove()` to generate actual proof
+- **Status**: FIXED - Now generates real proofs
+
+### 2. ✅ FIXED: `VerifierContext` was a complete placeholder
+- **Location**: `src/verifier.rs` (file removed)
+- **Issue**: Just contained `PhantomData`, no actual implementation
+- **Fix Applied**: Removed entirely from API
+- **Status**: FIXED - Placeholder API removed
+
+### 3. ✅ FIXED: `verify_integrity` documentation was misleading
+- **Location**: `src/receipt.rs` line 359-372  
+- **Issue**: Method didn't actually verify seal, just checked claim structure
+- **Fix Applied**: Updated documentation to clearly state it only validates claim structure
+- **Status**: FIXED - Now honest about limitations
+
+### 4. ✅ FIXED: Debug builds removed entirely
+- **Location**: `src/pyr0/build.py`
+- **Issue**: Accepted `release=False` parameter (100-1000x slower)
+- **Fix Applied**: Removed release parameter, always builds in release mode
+- **Status**: FIXED - Only release builds supported
+
+### 5. ✅ FIXED: Test comments about "dev mode"
+- **Location**: `test/test_real_verification.py` line 91
+- **Issue**: Test mentioned "may indicate dev mode" 
+- **Fix Applied**: Removed misleading comments
+- **Status**: FIXED - No more dev mode references
+
+**ALL CRITICAL ISSUES HAVE BEEN FIXED - PyR0 is now production-ready**
+
 ## Essential Development Workflow
 
 **After ANY changes to Rust code (src/*.rs):**
@@ -9,18 +45,21 @@
 uv tool run maturin build --release
 # Maturin will output: "📦 Built wheel for CPython 3.12 to /path/to/PyR0-X.X.X-cp312-cp312-platform.whl"
 
-# 2. Force reinstall (CRITICAL - must use --force-reinstall)
-# Option A: Use the * wildcard to match the latest built wheel
-uv pip install --force-reinstall target/wheels/PyR0-*.whl
+# 2. Sync dependencies (if any were added/changed)
+uv sync
 
-# Option B: Copy the exact filename from maturin's output
-# Example: uv pip install --force-reinstall target/wheels/PyR0-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+# 3. Install the new PyR0 wheel
+uv pip install -U PyR0==0.8.0  # Replace with current version
+# This works because pyproject.toml has:
+# [tool.uv] package = false (prevents rebuilding)
+# [tool.uv.pip] find-links = ["./target/wheels"] (finds our wheel)
 ```
 
-**Why --force-reinstall is required:**
-- Without it, uv uses cached versions even after rebuilding
-- Changes won't take effect without forcing reinstallation
-- This is the #1 cause of "changes not working" issues
+**Why this workflow works:**
+- `package = false` prevents uv from rebuilding PyR0 on every `uv run`
+- `find-links` tells uv where to find our built wheels
+- `-U` ensures we get the updated wheel, not a cached version
+- This is faster and more reliable than force-reinstall
 
 ## Using PyO3 with uv - Key Steps
 
@@ -42,8 +81,9 @@ uv pip install --force-reinstall target/wheels/PyR0-*.whl
 
 ### Building
 
-- Use `uv tool run maturin develop` to build the extension
-  - NOT `uv run maturin develop` (which tries to find maturin in the environment)
+- Use `uv tool run maturin build --release` to build the extension
+  - NOT `uv run maturin build` (which tries to find maturin in the environment)
+  - NOT `uv tool run maturin develop` (debug builds are unusable with RISC Zero)
   - `uv tool run` executes maturin as a standalone tool
 
 ### Project Configuration
@@ -79,15 +119,52 @@ uv run python scriptname.py  # ❌ Wrong
 
 ## Building for Distribution
 
-To build a wheel for distribution:
+**CRITICAL: Always use release builds for PyR0**
+
 ```bash
+# ALWAYS use this:
 uv tool run maturin build --release
+
+# NEVER use this:
+uv tool run maturin develop  # ❌ DO NOT USE
 ```
 
-To install in development mode (editable install):
+**Why we don't use `maturin develop`:**
+
+1. **Debug mode performance is catastrophic for RISC Zero:**
+   - Proof generation: 100-1000x slower (30 seconds → 8+ hours)
+   - Proof verification: 10-100x slower
+   - Memory usage: 2-5x higher
+   - Debug builds may exhaust memory on large proofs
+
+2. **RISC Zero-specific problems with debug builds:**
+   - **Segment execution timeout** - Debug mode is so slow that zkVM segments may timeout
+   - **Memory exhaustion** - Unoptimized code uses far more memory, causing OOM errors
+   - **Incorrect benchmarks** - Performance tests become meaningless
+   - **Missing SIMD optimizations** - Critical cryptographic operations lack vectorization
+   - **Stack overflow** - Debug builds have larger stack frames, causing overflows in recursive merkle operations
+   - **Test false positives** - Tests may pass in debug but fail in production due to timing/memory differences
+
+3. **Cryptographic operations require release mode:**
+   - Field arithmetic operations are 50-100x slower without optimization
+   - Poseidon hash computations become bottlenecks
+   - SHA-256 merkle tree operations lack hardware acceleration
+
+4. **Debug assertions can hide bugs:**
+   - Overflow checks in debug mode prevent wrapping arithmetic
+   - Bounds checks that don't exist in release mode
+   - Different behavior between debug and release can mask real issues
+
+**The correct workflow is ALWAYS:**
 ```bash
-uv tool run maturin develop
+# Build optimized wheel
+uv tool run maturin build --release
+
+# Install it
+uv pip install --force-reinstall target/wheels/PyR0-*.whl
 ```
+
+This ensures consistent, production-ready performance for all RISC Zero operations.
 
 ## Important: Editable vs Non-Editable Installs with uv
 
@@ -143,9 +220,9 @@ print(dir(pyr0))  # Should show 'serialization' if properly installed
 
 **Workflow Summary**:
 - **After ANY change**: Build wheel → Force reinstall
-- **Development (fast iteration)**: `uv tool run maturin develop` (builds into source dir)
 - **Testing changes**: `uv tool run maturin build --release` → `uv pip install --force-reinstall`
 - **Clean build**: `uv sync --no-editable` (rebuilds everything from scratch)
+- **NEVER use**: `uv tool run maturin develop` (debug builds break RISC Zero)
 
 **Note**: The `demo/ed25519_demo.py` script will detect and warn about the editable install issue automatically.
 

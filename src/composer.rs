@@ -4,6 +4,7 @@ use risc0_zkvm::{ExecutorEnv, ProverOpts};
 use risc0_zkvm::sha::{Digestible, Sha256, Digest};
 use crate::image::Image;
 use crate::receipt::Receipt;
+use crate::input_builder::InputBuilder;
 use std::collections::{HashSet, HashMap};
 
 /// A builder for composing proofs with type-safe inputs and assumptions
@@ -22,7 +23,7 @@ pub struct Composer {
     image: Py<Image>,
     assumptions: Vec<risc0_zkvm::Receipt>,
     assumption_digests: HashSet<(Digest, Digest)>, // (image_id, journal_digest) for dedup
-    input_data: Vec<u8>,
+    input_builder: InputBuilder,  // Use InputBuilder for consistent API
     expected_verifications: Vec<(Vec<u8>, Vec<u8>)>, // (image_id, journal)
 }
 
@@ -35,7 +36,7 @@ impl Composer {
             image,
             assumptions: Vec::new(),
             assumption_digests: HashSet::new(),
-            input_data: Vec::new(),
+            input_builder: InputBuilder::new(),
             expected_verifications: Vec::new(),
         }
     }
@@ -121,94 +122,99 @@ impl Composer {
         Ok(())
     }
     
+    /// Write CBOR-encoded data WITHOUT frame (Pattern A: CBOR-only)
+    /// 
+    /// ⚠️ Use this ONLY if your entire input is a single CBOR object.
+    /// For mixing with raw fields, use write_cbor_frame() instead.
+    /// 
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_cbor() for full documentation.
+    pub fn write_cbor(&mut self, cbor_bytes: Vec<u8>) -> PyResult<()> {
+        self.input_builder.write_cbor_internal(cbor_bytes);
+        Ok(())
+    }
+    
+    /// Write CBOR with length frame (Pattern C: Safe mixing)
+    /// 
+    /// Writes: [u64 length][CBOR bytes]
+    /// This allows safely mixing CBOR with raw fields.
+    /// 
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_cbor_frame() for full documentation.
+    pub fn write_cbor_frame(&mut self, cbor_bytes: Vec<u8>) -> PyResult<()> {
+        self.input_builder.write_cbor_frame_internal(cbor_bytes);
+        Ok(())
+    }
+    
     /// Write a u32 value (4 bytes, little-endian)
     /// 
-    /// Guest reads with env::read_slice:
-    ///     let mut bytes = [0u8; 4];
-    ///     env::read_slice(&mut bytes);
-    ///     let value = u32::from_le_bytes(bytes);
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_u32() for full documentation.
     pub fn write_u32(&mut self, value: u32) -> PyResult<()> {
-        self.input_data.extend_from_slice(&value.to_le_bytes());
+        self.input_builder.write_u32_internal(value);
         Ok(())
     }
     
     /// Write a u64 value (8 bytes, little-endian)
     /// 
-    /// Guest reads with env::read_slice:
-    ///     let mut bytes = [0u8; 8];
-    ///     env::read_slice(&mut bytes);
-    ///     let value = u64::from_le_bytes(bytes);
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_u64() for full documentation.
     pub fn write_u64(&mut self, value: u64) -> PyResult<()> {
-        self.input_data.extend_from_slice(&value.to_le_bytes());
+        self.input_builder.write_u64_internal(value);
         Ok(())
     }
     
-    /// Write exactly 32 bytes (for fixed-size arrays)
+    /// Write raw bytes without any encoding (ADVANCED)
     /// 
-    /// Guest reads with env::read_slice:
-    ///     let mut bytes = [0u8; 32];
-    ///     env::read_slice(&mut bytes);
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_raw_bytes() for full documentation.
+    pub fn write_raw_bytes(&mut self, data: Vec<u8>) -> PyResult<()> {
+        self.input_builder.write_raw_bytes_internal(data);
+        Ok(())
+    }
+    
+    /// Write raw bytes with length frame (Pattern C: Variable-length data)
+    /// 
+    /// Writes: [u64 length][raw bytes]
+    /// 
+    /// Delegates to the internal InputBuilder.
+    /// See InputBuilder.write_frame() for full documentation.
+    pub fn write_frame(&mut self, data: Vec<u8>) -> PyResult<()> {
+        self.input_builder.write_frame_internal(data);
+        Ok(())
+    }
+    
+    // Compatibility methods for specific use cases
+    
+    /// Write exactly 32 bytes (enforces length)
+    /// 
+    /// Common for cryptographic keys, hashes, and image IDs.
+    /// 
+    /// **Guest code (Rust):**
+    /// ```rust
+    /// let mut bytes = [0u8; 32];
+    /// env::read_slice(&mut bytes);
+    /// ```
     pub fn write_bytes32(&mut self, data: Vec<u8>) -> PyResult<()> {
         if data.len() != 32 {
             return Err(PyErr::new::<PyValueError, _>(
-                format!("Expected 32 bytes, got {}", data.len())
+                format!("write_bytes32 requires exactly 32 bytes, got {}", data.len())
             ));
         }
-        self.input_data.extend_from_slice(&data);
+        self.input_builder.write_raw_bytes_internal(data);
         Ok(())
     }
     
-    /// Write an image ID (32 bytes)
+    /// Write an image ID (alias for write_bytes32)
     /// 
-    /// Guest reads as Digest with env::read_slice:
-    ///     let mut bytes = [0u8; 32];
-    ///     env::read_slice(&mut bytes);
-    ///     let digest = Digest::from_bytes(bytes);
+    /// **Guest code (Rust):**
+    /// ```rust
+    /// let mut bytes = [0u8; 32];
+    /// env::read_slice(&mut bytes);
+    /// let image_id = Digest::from_bytes(bytes);
+    /// ```
     pub fn write_image_id(&mut self, image_id: Vec<u8>) -> PyResult<()> {
         self.write_bytes32(image_id)
-    }
-    
-    /// Write raw bytes (for env::read_slice)
-    /// 
-    /// Guest must know the exact length to read:
-    ///     let mut buffer = [0u8; N];
-    ///     env::read_slice(&mut buffer);
-    pub fn write_slice(&mut self, data: Vec<u8>) -> PyResult<()> {
-        self.input_data.extend_from_slice(&data);
-        Ok(())
-    }
-    
-    /// Write a Vec<u8> with length prefix (for env::read::<Vec<u8>>)
-    /// 
-    /// Guest reads with typed env::read:
-    ///     let data: Vec<u8> = env::read::<Vec<u8>>();
-    pub fn write_vec_u8(&mut self, data: Vec<u8>) -> PyResult<()> {
-        // RISC Zero uses u64 little-endian for Vec length
-        let len = data.len() as u64;
-        self.input_data.extend_from_slice(&len.to_le_bytes());
-        self.input_data.extend_from_slice(&data);
-        Ok(())
-    }
-    
-    /// Write a String with length prefix (for env::read::<String>)
-    /// 
-    /// Guest reads with typed env::read:
-    ///     let text: String = env::read::<String>();
-    pub fn write_string(&mut self, text: &str) -> PyResult<()> {
-        // RISC Zero uses u64 little-endian for String length
-        let bytes = text.as_bytes();
-        let len = bytes.len() as u64;
-        self.input_data.extend_from_slice(&len.to_le_bytes());
-        self.input_data.extend_from_slice(bytes);
-        Ok(())
-    }
-    
-    /// Write the journal from a receipt
-    /// 
-    /// This is useful when the outer guest needs to verify the inner journal.
-    pub fn write_journal_from(&mut self, receipt: &Receipt) -> PyResult<()> {
-        self.input_data.extend_from_slice(&receipt.inner.journal.bytes);
-        Ok(())
     }
     
     /// Register an expected env::verify() call for preflight checking
@@ -366,8 +372,9 @@ impl Composer {
         }
         
         // Add input data
-        if !self.input_data.is_empty() {
-            builder.write_slice(&self.input_data);
+        let input_data = self.input_builder.build();
+        if !input_data.is_empty() {
+            builder.write_slice(&input_data);
         }
         
         let env = builder.build()
@@ -434,7 +441,7 @@ impl Composer {
     /// Get the current size of the input data buffer
     #[getter]
     pub fn input_size(&self) -> usize {
-        self.input_data.len()
+        self.input_builder.size()
     }
     
     /// Get the number of assumptions added
@@ -447,7 +454,7 @@ impl Composer {
         format!(
             "Composer(assumptions={}, input_size={} bytes)",
             self.assumptions.len(),
-            self.input_data.len()
+            self.input_builder.size()
         )
     }
 }

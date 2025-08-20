@@ -42,7 +42,7 @@ __all__ = [
     "ReceiptKind",
     "Claim",
     "Composer",
-    "VerifierContext",
+    "InputBuilder",
     
     # Exceptions
     "BuildError",

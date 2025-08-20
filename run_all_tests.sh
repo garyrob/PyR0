@@ -5,7 +5,7 @@
 set -e  # Exit immediately on any error
 set -o pipefail  # Pipe failures propagate
 
-# Colors for output
+# Colors for output (using printf for better compatibility)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -22,49 +22,49 @@ run_test() {
     local test_name=$1
     local test_command=$2
     
-    echo -e "${YELLOW}Running: $test_name${NC}"
+    printf "${YELLOW}Running: $test_name${NC}\n"
     echo "Command: $test_command"
     echo "---"
     
     if eval "$test_command"; then
-        echo -e "${GREEN}✓ $test_name PASSED${NC}\n"
+        printf "${GREEN}✓ $test_name PASSED${NC}\n\n"
     else
-        echo -e "${RED}✗ $test_name FAILED${NC}"
-        echo -e "${RED}ABORTING: Test suite failed at $test_name${NC}"
+        printf "${RED}✗ $test_name FAILED${NC}\n"
+        printf "${RED}ABORTING: Test suite failed at $test_name${NC}\n"
         exit 1
     fi
 }
 
 # Core functionality tests
 echo "=== Core Tests ==="
-run_test "Real Verification Test" "uv run test_real_verification.py"
-run_test "Security Verification Test" "uv run test_security_verification.py"
-run_test "Verify API Test" "uv run test_verify_api.py"
+run_test "Import Test" "uv run test/test_import.py"
+run_test "Real Verification Test" "uv run test/test_real_verification.py"
+run_test "Security Verification Test" "uv run test/test_security_verification.py"
+run_test "Verify API Test" "uv run test/test_verify_api.py"
 
 # API tests
-echo -e "\n=== API Tests ==="
-run_test "Build Guest Test" "uv run test_build_guest.py"
-run_test "Receipt API Test" "uv run test_receipt_api.py"
+printf "\n=== API Tests ===\n"
+run_test "Build Guest Test" "uv run test/test_build_guest.py"
+run_test "Receipt API Test" "uv run test/test_receipt_api.py"
+run_test "API Invariants Test" "uv run test/test_api_invariants.py"
+
+# Serialization tests
+printf "\n=== Serialization Tests ===\n"
+run_test "InputBuilder Test" "uv run test/test_input_builder.py"
+run_test "CBOR Serialization Test" "uv run test/test_cbor_serialization.py"
 
 # Composition tests
-echo -e "\n=== Composition Tests ==="
-run_test "Proof Composition Test" "uv run test_composition.py"
-
-# Merkle tree tests
-echo -e "\n=== Merkle Tree Tests ==="
-run_test "Merkle ZKP Test" "uv run test/test_merkle_zkp.py"
+printf "\n=== Composition Tests ===\n"
+run_test "Composer API Test" "uv run test/test_composer_api.py"
+run_test "Proof Composition Test" "uv run test/test_composition.py"
 
 # Demo scripts (these should also validate functionality)
-echo -e "\n=== Demo Scripts ==="
+printf "\n=== Demo Scripts ===\n"
 run_test "Ed25519 Demo" "uv run demo/ed25519_demo.py"
-
-# Merkle demos require merkle_py which is part of the project
-run_test "Merkle Demo" "uv run demo/merkle_demo.py"
-run_test "Merkle ZKP Demo" "uv run demo/merkle_zkp_demo.py"
 
 # If we get here, all tests passed
 echo ""
 echo "=================================="
-echo -e "${GREEN}ALL TESTS PASSED!${NC}"
+printf "${GREEN}ALL TESTS PASSED!${NC}\n"
 echo "=================================="
 exit 0

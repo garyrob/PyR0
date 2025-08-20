@@ -24,7 +24,7 @@ def test_receipt_api():
         from pyr0 import serialization
         
         # Build test guest if needed
-        GUEST_DIR = Path(__file__).parent / "demo" / "ed25519_demo_guest"
+        GUEST_DIR = Path(__file__).parent.parent / "demo" / "ed25519_demo_guest"
         
         try:
             print("\nBuilding test guest program...")

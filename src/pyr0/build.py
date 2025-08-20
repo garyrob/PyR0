@@ -32,11 +32,13 @@ class InvalidGuestDirectoryError(BuildError):
 def build_guest(
     guest_dir: str | Path,
     binary_name: Optional[str] = None,
-    release: bool = True,
     use_embed_methods: Optional[bool] = None
 ) -> Path:
     """
     Build a RISC Zero guest program and return the path to the ELF file.
+    
+    Always builds in release mode for optimal performance. Debug builds are not
+    supported as they cause 100-1000x performance degradation with RISC Zero.
     
     This function handles both build methods:
     1. Standard RISC Zero structure with embed_methods (host/guest setup)
@@ -45,7 +47,6 @@ def build_guest(
     Args:
         guest_dir: Path to the guest directory containing Cargo.toml
         binary_name: Name of the binary to build (defaults to package name from Cargo.toml)
-        release: If True, build in release mode (recommended)
         use_embed_methods: If True, use standard structure; if False, use direct build;
                           if None, auto-detect based on presence of build.rs in parent
         
@@ -124,10 +125,8 @@ def build_guest(
         # Direct build: <guest_dir>/target/riscv32im-risc0-zkvm-elf/release/<binary>
         target_dir = guest_path / "target" / "riscv32im-risc0-zkvm-elf"
     
-    if release:
-        elf_path = target_dir / "release" / binary_name
-    else:
-        elf_path = target_dir / "debug" / binary_name
+    # Always use release mode for RISC Zero guests
+    elf_path = target_dir / "release" / binary_name
     
     # Always clean build artifacts to ensure fresh build
     if use_embed_methods:
@@ -156,17 +155,15 @@ def build_guest(
     if use_embed_methods:
         # Build from the host directory (parent of guest)
         build_dir = guest_path.parent
-        cmd = ["cargo", "build"]
+        cmd = ["cargo", "build", "--release"]
     else:
         # Direct build from guest directory
         build_dir = guest_path
         cmd = [
             "cargo", "+risc0", "build",
-            "--target", "riscv32im-risc0-zkvm-elf"
+            "--target", "riscv32im-risc0-zkvm-elf",
+            "--release"
         ]
-    
-    if release:
-        cmd.append("--release")
     
     try:
         result = subprocess.run(

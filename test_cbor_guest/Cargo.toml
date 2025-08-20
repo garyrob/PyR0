@@ -1,0 +1,11 @@
+[package]
+name = "test-cbor-guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+risc0-zkvm = { version = "1.2", default-features = false, features = ["std"] }
+# minicbor with alloc for Vec/String support and derive for the macros
+minicbor = { version = "0.24", default-features = false, features = ["alloc", "derive"] }
+
+[workspace]

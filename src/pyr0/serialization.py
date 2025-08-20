@@ -3,7 +3,7 @@ Serialization helpers for preparing data to send to RISC Zero guest programs.
 
 This module provides:
 1. Basic primitives for serializing Python data to Rust types
-2. Convenience functions for common cryptographic operations (Ed25519, Merkle proofs)
+2. Convenience functions for common cryptographic operations (Ed25519)
 3. Helper patterns for standard RISC Zero use cases
 
 These are optional convenience functions - you can use them directly or as 
@@ -270,50 +270,5 @@ def ed25519_input_arrays(public_key: bytes, signature: bytes, message: bytes) ->
     return to_bytes32(public_key) + to_bytes64(signature) + to_vec_u8(message)
 
 
-def merkle_commitment_input(k_pub: bytes, r: bytes, e: bytes,
-                           siblings: List[bytes], indices: List[bool]) -> bytes:
-    """
-    Serialize input for a Merkle commitment proof (2LA-style) using raw bytes.
-    
-    This format is for guests using env::read_slice() with a fixed-size buffer.
-    Assumes exactly 16 siblings for a 16-level tree.
-    
-    Guest code would read this as:
-        let mut buffer = vec![0u8; 624];  // Fixed size
-        env::read_slice(&mut buffer);
-        // Then parse: k_pub (32), r (32), e (32), siblings (16*32), indices (16)
-    
-    Args:
-        k_pub: 32-byte public key
-        r: 32-byte randomness (secret)
-        e: 32-byte external identity nullifier (secret)
-        siblings: List of exactly 16 32-byte sibling hashes
-        indices: List of exactly 16 boolean path bits
-    
-    Returns:
-        Raw bytes (624 bytes total) ready for pyr0.prove()
-    
-    Example:
-        input_data = merkle_commitment_input(k_pub, r, e, siblings, bits)
-        receipt = pyr0.prove(image, input_data)
-    """
-    if len(siblings) != 16:
-        raise ValueError(f"Expected exactly 16 siblings, got {len(siblings)}")
-    if len(indices) != 16:
-        raise ValueError(f"Expected exactly 16 indices, got {len(indices)}")
-    
-    result = raw_bytes(k_pub)
-    result += raw_bytes(r)
-    result += raw_bytes(e)
-    
-    # Add siblings as raw bytes
-    for sibling in siblings:
-        result += raw_bytes(sibling)
-    
-    # Add indices as raw bytes (1 byte per bool)
-    for bit in indices:
-        result += bytes([1 if bit else 0])
-    
-    return result
 
 

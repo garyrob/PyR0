@@ -12,9 +12,6 @@ os.environ['RISC0_DEV_MODE'] = '0'
 import pyr0
 from pyr0 import serialization
 
-# Debug: check what we actually imported
-print(f"Imported pyr0 from: {pyr0.__file__}")
-print(f"Using new API: {hasattr(pyr0, 'prove')}")
 
 # Constants
 GUEST_DIR = Path(__file__).parent / "ed25519_demo_guest"
@@ -122,9 +119,10 @@ sig_bytes = bytes.fromhex(INVALID_SIG)
 
 input_data = serialization.ed25519_input(pk_bytes, sig_bytes, msg_bytes)
 
-# For the second test, we just execute, no need for proof
-info = pyr0.dry_run(image, input_data)
-journal = info.journal
+# Generate proof for invalid signature test
+print("Generating proof for invalid signature...")
+receipt2 = pyr0.prove(image, input_data)
+journal = receipt2.journal
 
 print(f"Journal: {len(journal)} bytes")
 
